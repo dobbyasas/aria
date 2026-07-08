@@ -7,6 +7,7 @@ struct Track: Identifiable, Hashable, Codable {
     var album: String
     var duration: TimeInterval
     var year: Int
+    var trackNumber: Int?
     var artwork: ArtworkPalette
     var streamURL: URL?
     var artworkURL: URL?
@@ -19,6 +20,7 @@ struct Track: Identifiable, Hashable, Codable {
         album: String,
         duration: TimeInterval,
         year: Int = 2026,
+        trackNumber: Int? = nil,
         artwork: ArtworkPalette,
         streamURL: URL? = nil,
         artworkURL: URL? = nil,
@@ -30,6 +32,7 @@ struct Track: Identifiable, Hashable, Codable {
         self.album = album
         self.duration = duration
         self.year = year
+        self.trackNumber = trackNumber
         self.artwork = artwork
         self.streamURL = streamURL
         self.artworkURL = artworkURL

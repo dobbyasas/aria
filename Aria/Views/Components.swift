@@ -1,11 +1,55 @@
 import SwiftUI
+import UIKit
+
+enum AriaMotion {
+    static let fast = Animation.easeOut(duration: 0.18)
+    static let quickSpring = Animation.spring(response: 0.24, dampingFraction: 0.86)
+    static let playerSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
+    static let press = Animation.spring(response: 0.18, dampingFraction: 0.78)
+}
+
+struct AriaPressButtonStyle: ButtonStyle {
+    var pressedScale: CGFloat = 0.94
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
+            .animation(AriaMotion.press, value: configuration.isPressed)
+    }
+}
 
 struct ArtworkView: View {
+    @State private var cachedArtwork: UIImage?
+
     let track: Track
     var size: CGFloat
     var cornerRadius: CGFloat = 8
 
     var body: some View {
+        ZStack {
+            fallbackArtwork
+
+            if let cachedArtwork {
+                Image(uiImage: cachedArtwork)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        )
+        .animation(AriaMotion.fast, value: track.artworkURL)
+        .task(id: track.artworkURL) {
+            await loadArtwork()
+        }
+    }
+
+    private var fallbackArtwork: some View {
         ZStack {
             LinearGradient(
                 colors: [Color(hex: track.artwork.topHex), Color(hex: track.artwork.bottomHex)],
@@ -18,21 +62,33 @@ struct ArtworkView: View {
                 .foregroundStyle(.white.opacity(0.88))
                 .shadow(radius: 16)
         }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(.white.opacity(0.12), lineWidth: 1)
-        )
+    }
+
+    private func loadArtwork() async {
+        guard let artworkURL = track.artworkURL else {
+            cachedArtwork = nil
+            return
+        }
+
+        cachedArtwork = nil
+
+        guard let image = await AriaArtworkCache.shared.image(for: artworkURL) else {
+            return
+        }
+
+        guard !Task.isCancelled, track.artworkURL == artworkURL else {
+            return
+        }
+
+        withAnimation(AriaMotion.fast) {
+            cachedArtwork = image
+        }
     }
 }
 
 struct TrackRow: View {
     @EnvironmentObject private var player: PlayerViewModel
-    @GestureState private var horizontalDrag: CGFloat = 0
-    @State private var restingOffset: CGFloat = 0
     @State private var isAddToPlaylistPresented = false
-    @State private var isTapSuppressed = false
 
     let track: Track
     var source: [Track]
@@ -41,21 +97,66 @@ struct TrackRow: View {
     var removesFromQueueOnLeftSwipe = false
 
     var body: some View {
-        ZStack {
-            swipeActionBackground
-
-            rowSurface
-                .offset(x: rowOffset)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .simultaneousGesture(swipeGesture)
-        .animation(.spring(response: 0.24, dampingFraction: 0.86), value: restingOffset)
+        rowContent
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .animation(AriaMotion.fast, value: player.currentTrack?.id)
+            .onTapGesture {
+                handleRowTap()
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: removesFromQueueOnLeftSwipe) {
+                trailingSwipeActions
+            }
+            .swipeActions(edge: .leading, allowsFullSwipe: playlistForRemoval != nil) {
+                leadingSwipeActions
+            }
         .sheet(isPresented: $isAddToPlaylistPresented) {
             AddToPlaylistSheet(track: track)
                 .environmentObject(player)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color.ariaBackground)
+        }
+    }
+
+    @ViewBuilder
+    private var trailingSwipeActions: some View {
+        if removesFromQueueOnLeftSwipe {
+            Button(role: .destructive) {
+                withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+                    player.removeFromQueue(track)
+                }
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+        } else {
+            Button {
+                addTrackToFront()
+            } label: {
+                Label("Up next", systemImage: "arrow.up.to.line")
+            }
+            .tint(.ariaAccent)
+
+            Button {
+                isAddToPlaylistPresented = true
+            } label: {
+                Label("Playlist", systemImage: "text.badge.plus")
+            }
+            .tint(.ariaSurfaceRaised)
+        }
+    }
+
+    @ViewBuilder
+    private var leadingSwipeActions: some View {
+        if let playlistForRemoval {
+            Button(role: .destructive) {
+                withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+                    player.remove(track, from: playlistForRemoval)
+                }
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
         }
     }
 
@@ -92,6 +193,8 @@ struct TrackRow: View {
                 Image(systemName: player.isPlaying ? "waveform" : "pause.fill")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.ariaAccent)
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.variableColor.iterative, options: .repeating.speed(3), isActive: player.isPlaying)
             } else {
                 Text(track.duration.ariaClockTime)
                     .font(.caption)
@@ -101,237 +204,17 @@ struct TrackRow: View {
         .contentShape(Rectangle())
     }
 
-    private var rowSurface: some View {
-        rowContent
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity)
-            .background(rowOffset == 0 ? Color.clear : Color.ariaBackground)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                handleRowTap()
-            }
-    }
-
-    private var rowOffset: CGFloat {
-        let proposedOffset = restingOffset + horizontalDrag
-
-        if proposedOffset > 0 {
-            return playlistForRemoval == nil ? 0 : min(proposedOffset, maxRightSwipe)
-        }
-
-        return max(proposedOffset, -leftSwipeLimit)
-    }
-
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 18, coordinateSpace: .local)
-            .updating($horizontalDrag) { value, state, _ in
-                guard isHorizontalSwipe(value) else { return }
-
-                if value.translation.width > 0, playlistForRemoval != nil || restingOffset < 0 {
-                    state = value.translation.width
-                } else if value.translation.width < 0 {
-                    state = value.translation.width
-                }
-            }
-            .onEnded { value in
-                guard isHorizontalSwipe(value) else { return }
-                suppressTapBriefly()
-
-                let proposedOffset = restingOffset + value.translation.width
-                let predictedOffset = restingOffset + value.predictedEndTranslation.width
-
-                if proposedOffset < 0 {
-                    if removesFromQueueOnLeftSwipe {
-                        handleQueueLeftSwipe(offset: proposedOffset, predictedOffset: predictedOffset)
-                    } else {
-                        handleLeftSwipe(offset: proposedOffset, predictedOffset: predictedOffset)
-                    }
-                } else if proposedOffset > 0, let playlistForRemoval {
-                    withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
-                        if proposedOffset > rightCommitThreshold || predictedOffset > rightCommitThreshold {
-                            player.remove(track, from: playlistForRemoval)
-                        }
-                        restingOffset = 0
-                    }
-                } else {
-                    closeSwipeActions()
-                }
-            }
-    }
-
-    private var swipeActionBackground: some View {
-        ZStack {
-            Color.clear
-
-            if rowOffset > 0 {
-                HStack {
-                    Image(systemName: "trash.fill")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 58, height: 58)
-
-                    Spacer()
-                }
-                .padding(.leading, 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.red.opacity(0.84))
-            } else if rowOffset < 0, removesFromQueueOnLeftSwipe {
-                HStack {
-                    Spacer()
-
-                    Image(systemName: "trash.fill")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 58, height: 58)
-                }
-                .padding(.trailing, 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.red.opacity(0.84))
-            } else if rowOffset < 0 {
-                HStack(spacing: 8) {
-                    Spacer()
-
-                    Button {
-                        suppressTapBriefly()
-                        addTrackToFront()
-                    } label: {
-                        Image(systemName: "arrow.up.to.line")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.ariaBackground)
-                            .frame(width: actionButtonSize, height: actionButtonSize)
-                            .background(.ariaAccent)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add to front")
-
-                    Button {
-                        suppressTapBriefly()
-                        withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-                            restingOffset = 0
-                        }
-                        isAddToPlaylistPresented = true
-                    } label: {
-                        Image(systemName: "text.badge.plus")
-                            .font(.title3.weight(.bold))
-                            .foregroundStyle(.ariaTextPrimary)
-                            .frame(width: actionButtonSize, height: actionButtonSize)
-                            .background(.white.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add to playlist")
-                }
-                .padding(.trailing, 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.ariaSurfaceRaised.opacity(0.92))
-            }
-        }
-    }
-
-    private var actionButtonSize: CGFloat {
-        56
-    }
-
-    private var openLeftOffset: CGFloat {
-        actionButtonSize * 2 + 28
-    }
-
-    private var maxLeftSwipe: CGFloat {
-        screenWidth * 0.58
-    }
-
-    private var leftSwipeLimit: CGFloat {
-        removesFromQueueOnLeftSwipe ? maxRightSwipe : maxLeftSwipe
-    }
-
-    private var maxRightSwipe: CGFloat {
-        min(screenWidth * 0.34, 132)
-    }
-
-    private var revealThreshold: CGFloat {
-        screenWidth * 0.10
-    }
-
-    private var leftCommitThreshold: CGFloat {
-        screenWidth * 0.50
-    }
-
-    private var rightCommitThreshold: CGFloat {
-        max(screenWidth * 0.16, 72)
-    }
-
-    private var screenWidth: CGFloat {
-        UIScreen.main.bounds.width
-    }
-
     private func handleRowTap() {
-        guard !isTapSuppressed else { return }
-
-        if restingOffset != 0 {
-            closeSwipeActions()
-            return
-        }
-
         player.play(track, from: source)
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+        withAnimation(AriaMotion.playerSpring) {
             player.showPlayer()
-        }
-    }
-
-    private func handleLeftSwipe(offset: CGFloat, predictedOffset: CGFloat) {
-        let leftOffset = abs(offset)
-        let predictedLeftOffset = abs(predictedOffset)
-
-        if leftOffset >= leftCommitThreshold || predictedLeftOffset >= leftCommitThreshold {
-            addTrackToFront()
-        } else if leftOffset >= revealThreshold {
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-                restingOffset = -openLeftOffset
-            }
-        } else {
-            closeSwipeActions()
-        }
-    }
-
-    private func handleQueueLeftSwipe(offset: CGFloat, predictedOffset: CGFloat) {
-        let leftOffset = abs(offset)
-        let predictedLeftOffset = abs(predictedOffset)
-
-        withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
-            if leftOffset > rightCommitThreshold || predictedLeftOffset > rightCommitThreshold {
-                player.removeFromQueue(track)
-            }
-
-            restingOffset = 0
         }
     }
 
     private func addTrackToFront() {
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             player.addToFront(track)
-            restingOffset = 0
         }
-    }
-
-    private func closeSwipeActions() {
-        withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-            restingOffset = 0
-        }
-    }
-
-    private func suppressTapBriefly() {
-        isTapSuppressed = true
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            isTapSuppressed = false
-        }
-    }
-
-    private func isHorizontalSwipe(_ value: DragGesture.Value) -> Bool {
-        let width = abs(value.translation.width)
-        let height = abs(value.translation.height)
-        return width > 18 && width > height * 1.25
     }
 }
 
@@ -376,7 +259,7 @@ struct AddToPlaylistButton: View {
                 .background(hasBackground ? .white.opacity(0.08) : .clear)
                 .clipShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AriaPressButtonStyle())
         .accessibilityLabel("Add to playlist")
         .sheet(isPresented: $isPickerPresented) {
             AddToPlaylistSheet(track: track)
@@ -463,7 +346,7 @@ private struct AddToPlaylistSheet: View {
                 .background(.ariaAccent)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
     }
 }
 
@@ -501,10 +384,11 @@ private struct AddToPlaylistRow: View {
                 Image(systemName: containsTrack ? "checkmark.circle.fill" : "plus.circle")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(containsTrack ? .ariaAccent : .ariaTextSecondary)
+                    .contentTransition(.symbolEffect(.replace))
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
         .padding(.vertical, 6)
     }
 }
@@ -539,52 +423,69 @@ struct MiniPlayerBar: View {
 
     var body: some View {
         if let track = player.currentTrack {
-            HStack(spacing: 12) {
-                Button {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                        player.showPlayer()
-                    }
-                } label: {
-                    HStack(spacing: 12) {
-                        ArtworkView(track: track, size: 44, cornerRadius: 6)
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    Button {
+                        withAnimation(AriaMotion.playerSpring) {
+                            player.showPlayer()
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            ArtworkView(track: track, size: 44, cornerRadius: 6)
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(track.title)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.ariaTextPrimary)
-                                .lineLimit(1)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(track.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.ariaTextPrimary)
+                                    .lineLimit(1)
+                                    .contentTransition(.opacity)
 
-                            Text(track.artist)
-                                .font(.caption)
-                                .foregroundStyle(.ariaTextSecondary)
-                                .lineLimit(1)
+                                Text(track.artist)
+                                    .font(.caption)
+                                    .foregroundStyle(.ariaTextSecondary)
+                                    .lineLimit(1)
+                                    .contentTransition(.opacity)
+                            }
                         }
                     }
+                    .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
+
+                    Spacer()
+
+                    AddToPlaylistButton(track: track, size: 36, hasBackground: false)
+
+                    Button {
+                        player.playPause()
+                    } label: {
+                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.ariaTextPrimary)
+                            .frame(width: 40, height: 40)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .buttonStyle(AriaPressButtonStyle())
+                    .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
 
-                Spacer()
-
-                AddToPlaylistButton(track: track, size: 36, hasBackground: false)
-
-                Button {
-                    player.playPause()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.ariaTextPrimary)
-                        .frame(width: 40, height: 40)
+                GeometryReader { geometry in
+                    Capsule()
+                        .fill(.ariaAccent)
+                        .frame(width: max(geometry.size.width * player.progress, 4), height: 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                .frame(height: 2)
+                .opacity(player.progress > 0 ? 1 : 0)
+                .animation(AriaMotion.fast, value: player.progress)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
             .background(.ariaSurfaceRaised)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .stroke(.white.opacity(0.08), lineWidth: 1)
             )
+            .animation(AriaMotion.fast, value: player.currentTrack?.id)
         }
     }
 }

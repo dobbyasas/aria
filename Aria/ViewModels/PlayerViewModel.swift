@@ -1,10 +1,13 @@
 import Combine
 import AVFoundation
 import Foundation
+import MediaPlayer
+import UIKit
 
 @MainActor
 final class PlayerViewModel: ObservableObject {
     @Published private(set) var catalog: [Track]
+    @Published private(set) var albums: [AriaAlbum]
     @Published private(set) var playlists: [AriaPlaylist]
     @Published private(set) var queue: [Track]
     @Published private(set) var isCatalogLoading = false
@@ -15,7 +18,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isPlaying = false
     @Published var isShuffleEnabled = false
     @Published var repeatMode: RepeatMode = .off
-    @Published var volume = 0.74 {
+    @Published var volume = 1.0 {
         didSet {
             audioPlayer?.volume = Float(volume)
         }
@@ -27,6 +30,10 @@ final class PlayerViewModel: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var catalogTask: Task<Void, Never>?
     private var timer: AnyCancellable?
+    private var remoteCommandTargets: [Any] = []
+    private var nowPlayingArtwork: MPMediaItemArtwork?
+    private var nowPlayingArtworkTrackID: UUID?
+    private var nowPlayingArtworkTask: Task<Void, Never>?
 
     init(
         catalog: [Track] = [],
@@ -35,10 +42,15 @@ final class PlayerViewModel: ObservableObject {
         automaticallyLoadsCatalog: Bool = true
     ) {
         self.catalog = catalog
+        self.albums = Self.albums(from: catalog)
         self.playlists = playlists
         self.queue = catalog
         self.currentTrack = catalog.first
         self.serverClient = serverClient
+
+        configureAudioSession()
+        configureRemoteCommands()
+        updateNowPlayingInfo()
 
         if automaticallyLoadsCatalog {
             catalogTask = Task { [weak self] in
@@ -51,6 +63,8 @@ final class PlayerViewModel: ObservableObject {
         if let endObserver {
             NotificationCenter.default.removeObserver(endObserver)
         }
+
+        nowPlayingArtworkTask?.cancel()
     }
 
     var progress: Double {
@@ -68,26 +82,67 @@ final class PlayerViewModel: ObservableObject {
         return Array(queue[nextIndex...])
     }
 
-    var albums: [AriaAlbum] {
+    var upNextPreview: [Track] {
+        guard let currentTrack, let index = queue.firstIndex(of: currentTrack) else {
+            return Array(queue.prefix(20))
+        }
+
+        let nextIndex = queue.index(after: index)
+        guard nextIndex < queue.endIndex else { return [] }
+        return Array(queue[nextIndex...].prefix(20))
+    }
+
+    var remainingUpNextCount: Int {
+        guard let currentTrack, let index = queue.firstIndex(of: currentTrack) else {
+            return queue.count
+        }
+
+        let nextIndex = queue.index(after: index)
+        guard nextIndex < queue.endIndex else { return 0 }
+        return queue.distance(from: nextIndex, to: queue.endIndex)
+    }
+
+    var canSkipToNextTrack: Bool {
+        guard let currentTrack else { return false }
+        guard let index = queue.firstIndex(of: currentTrack) else {
+            return queue.count > 1
+        }
+
+        return queue.index(after: index) < queue.endIndex
+    }
+
+    var canSkipToPreviousTrack: Bool {
+        guard
+            let currentTrack,
+            let index = queue.firstIndex(of: currentTrack)
+        else {
+            return false
+        }
+
+        return index > queue.startIndex
+    }
+
+    private static func albums(from catalog: [Track]) -> [AriaAlbum] {
         let groupedTracks = Dictionary(grouping: catalog) { track in
             "\(track.artist)-\(track.album)"
         }
 
         return groupedTracks.values.compactMap { tracks in
-            guard let firstTrack = tracks.first else { return nil }
+            let sortedTracks = tracks.sortedForAlbumPlayback()
+            guard let firstTrack = sortedTracks.first else { return nil }
 
             return AriaAlbum(
                 title: firstTrack.album,
                 artist: firstTrack.artist,
                 year: firstTrack.year,
-                tracks: tracks.sorted { $0.title < $1.title }
+                tracks: sortedTracks
             )
         }
         .sorted { firstAlbum, secondAlbum in
             firstAlbum.title.localizedCaseInsensitiveCompare(secondAlbum.title) == .orderedAscending
         }
     }
-
+    
     func showPlayer() {
         isPlayerPresented = true
     }
@@ -99,6 +154,7 @@ final class PlayerViewModel: ObservableObject {
     func refreshCatalog() async {
         isCatalogLoading = true
         catalogErrorMessage = nil
+        await AriaArtworkCache.shared.removeExpiredArtwork()
 
         do {
             let tracks = try await serverClient.fetchTracks()
@@ -123,6 +179,8 @@ final class PlayerViewModel: ObservableObject {
         addToHistory(track)
         startPlayback(for: track)
         startTimer()
+        refreshNowPlayingArtwork(for: track)
+        updateNowPlayingInfo()
     }
 
     func playPause() {
@@ -140,6 +198,8 @@ final class PlayerViewModel: ObservableObject {
         } else {
             audioPlayer?.pause()
         }
+
+        updateNowPlayingInfo()
     }
 
     func next() {
@@ -150,7 +210,7 @@ final class PlayerViewModel: ObservableObject {
             return
         }
 
-        let nextTrack = isShuffleEnabled ? shuffledNext(after: currentTrack) : orderedNext(after: currentTrack)
+        let nextTrack = orderedNext(after: currentTrack)
 
         if let nextTrack {
             play(nextTrack, from: queue)
@@ -160,6 +220,7 @@ final class PlayerViewModel: ObservableObject {
             elapsed = currentTrack.duration
             isPlaying = false
             audioPlayer?.pause()
+            updateNowPlayingInfo()
         }
     }
 
@@ -179,6 +240,27 @@ final class PlayerViewModel: ObservableObject {
         play(queue[queue.index(before: currentIndex)], from: queue)
     }
 
+    func skipToNextTrack() {
+        guard let currentTrack, canSkipToNextTrack else { return }
+
+        let nextTrack = orderedNext(after: currentTrack)
+        guard let nextTrack else { return }
+
+        play(nextTrack, from: queue)
+    }
+
+    func skipToPreviousTrack() {
+        guard
+            let currentTrack,
+            canSkipToPreviousTrack,
+            let currentIndex = queue.firstIndex(of: currentTrack)
+        else {
+            return
+        }
+
+        play(queue[queue.index(before: currentIndex)], from: queue)
+    }
+
     func seek(toProgress progress: Double) {
         guard let currentTrack else { return }
         let targetTime = min(max(progress, 0), 1) * currentTrack.duration
@@ -187,10 +269,19 @@ final class PlayerViewModel: ObservableObject {
         if audioPlayer != nil {
             audioPlayer?.seek(to: CMTime(seconds: targetTime, preferredTimescale: 600))
         }
+
+        updateNowPlayingInfo()
     }
 
     func toggleShuffle() {
-        isShuffleEnabled.toggle()
+        if isShuffleEnabled {
+            isShuffleEnabled = false
+        } else {
+            shuffleQueue()
+            isShuffleEnabled = true
+        }
+
+        updateRemoteCommandAvailability()
     }
 
     func cycleRepeatMode() {
@@ -202,6 +293,8 @@ final class PlayerViewModel: ObservableObject {
         case .one:
             repeatMode = .off
         }
+
+        updateRemoteCommandAvailability()
     }
 
     func playPlaylist(_ playlist: AriaPlaylist) {
@@ -274,11 +367,150 @@ final class PlayerViewModel: ObservableObject {
         count == 1 ? "1 song" : "\(count) songs"
     }
 
+    private func configureAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            return
+        }
+    }
+
+    private func activateAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            return
+        }
+    }
+
+    private func configureRemoteCommands() {
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+
+        remoteCommandTargets = [
+            commandCenter.playCommand.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    if self?.isPlaying == false {
+                        self?.playPause()
+                    }
+                }
+                return .success
+            },
+            commandCenter.pauseCommand.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    if self?.isPlaying == true {
+                        self?.playPause()
+                    }
+                }
+                return .success
+            },
+            commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    self?.playPause()
+                }
+                return .success
+            },
+            commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    self?.next()
+                }
+                return .success
+            },
+            commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    self?.previous()
+                }
+                return .success
+            },
+            commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+                guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+                    return .commandFailed
+                }
+
+                Task { @MainActor in
+                    guard let currentTrack = self?.currentTrack, currentTrack.duration > 0 else { return }
+                    self?.seek(toProgress: event.positionTime / currentTrack.duration)
+                }
+
+                return .success
+            }
+        ]
+    }
+
+    private func updateRemoteCommandAvailability() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        let hasTrack = currentTrack != nil
+        commandCenter.playCommand.isEnabled = hasTrack
+        commandCenter.pauseCommand.isEnabled = hasTrack
+        commandCenter.togglePlayPauseCommand.isEnabled = hasTrack
+        commandCenter.changePlaybackPositionCommand.isEnabled = hasTrack
+        commandCenter.nextTrackCommand.isEnabled = hasTrack && (canSkipToNextTrack || repeatMode == .all)
+        commandCenter.previousTrackCommand.isEnabled = hasTrack
+    }
+
+    private func refreshNowPlayingArtwork(for track: Track) {
+        nowPlayingArtworkTask?.cancel()
+        nowPlayingArtwork = nil
+        nowPlayingArtworkTrackID = nil
+
+        guard let artworkURL = track.artworkURL else { return }
+
+        nowPlayingArtworkTask = Task { [weak self] in
+            guard let image = await AriaArtworkCache.shared.image(for: artworkURL) else { return }
+            let lockScreenArtwork = image.ariaCenteredSquareCrop()
+
+            await MainActor.run {
+                guard self?.currentTrack?.id == track.id else { return }
+
+                self?.nowPlayingArtwork = MPMediaItemArtwork(boundsSize: lockScreenArtwork.size) { _ in
+                    lockScreenArtwork
+                }
+                self?.nowPlayingArtworkTrackID = track.id
+                self?.updateNowPlayingInfo()
+            }
+        }
+    }
+
+    private func updateNowPlayingInfo() {
+        guard let currentTrack else {
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+            updateRemoteCommandAvailability()
+            return
+        }
+
+        var nowPlayingInfo: [String: Any] = [
+            MPMediaItemPropertyTitle: currentTrack.title,
+            MPMediaItemPropertyArtist: currentTrack.artist,
+            MPMediaItemPropertyAlbumTitle: currentTrack.album,
+            MPMediaItemPropertyPlaybackDuration: currentTrack.duration,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1 : 0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1
+        ]
+
+        if nowPlayingArtworkTrackID == currentTrack.id, let nowPlayingArtwork {
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = nowPlayingArtwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
+        updateRemoteCommandAvailability()
+    }
+
     private func replaceCatalog(with tracks: [Track]) {
         audioPlayer?.pause()
         removeEndObserver()
 
         catalog = tracks
+        albums = Self.albums(from: tracks)
         queue = tracks
         playlists = [
             AriaPlaylist(
@@ -291,11 +523,17 @@ final class PlayerViewModel: ObservableObject {
         currentTrack = tracks.first
         elapsed = 0
         isPlaying = false
+        nowPlayingArtwork = nil
+        nowPlayingArtworkTrackID = nil
+        nowPlayingArtworkTask?.cancel()
+        updateNowPlayingInfo()
     }
 
     private func startPlayback(for track: Track) {
         audioPlayer?.pause()
         removeEndObserver()
+
+        activateAudioSession()
 
         guard let streamURL = track.streamURL else {
             audioPlayer = nil
@@ -347,6 +585,7 @@ final class PlayerViewModel: ObservableObject {
             }
 
             updateCurrentTrackDurationIfNeeded()
+            updateNowPlayingInfo()
             return
         }
 
@@ -355,6 +594,7 @@ final class PlayerViewModel: ObservableObject {
             next()
         } else {
             elapsed += 1
+            updateNowPlayingInfo()
         }
     }
 
@@ -369,6 +609,7 @@ final class PlayerViewModel: ObservableObject {
         }
 
         startTimer()
+        updateNowPlayingInfo()
     }
 
     private func orderedNext(after track: Track) -> Track? {
@@ -378,9 +619,16 @@ final class PlayerViewModel: ObservableObject {
         return queue[nextIndex]
     }
 
-    private func shuffledNext(after track: Track) -> Track? {
-        let candidates = queue.filter { $0 != track }
-        return candidates.randomElement()
+    private func shuffleQueue() {
+        guard queue.count > 1 else { return }
+        guard let currentTrack, let currentIndex = queue.firstIndex(of: currentTrack) else {
+            queue.shuffle()
+            return
+        }
+
+        var otherTracks = queue
+        otherTracks.remove(at: currentIndex)
+        queue = [currentTrack] + otherTracks.shuffled()
     }
 
     private func addToHistory(_ track: Track) {
@@ -414,6 +662,45 @@ final class PlayerViewModel: ObservableObject {
             if let trackIndex = playlists[playlistIndex].tracks.firstIndex(where: { $0.id == trackID }) {
                 playlists[playlistIndex].tracks[trackIndex].duration = duration
             }
+        }
+
+        updateNowPlayingInfo()
+    }
+}
+
+private extension Array where Element == Track {
+    func sortedForAlbumPlayback() -> [Track] {
+        sorted { firstTrack, secondTrack in
+            switch (firstTrack.trackNumber, secondTrack.trackNumber) {
+            case let (firstNumber?, secondNumber?) where firstNumber != secondNumber:
+                return firstNumber < secondNumber
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return firstTrack.title.localizedCaseInsensitiveCompare(secondTrack.title) == .orderedAscending
+            }
+        }
+    }
+}
+
+private extension UIImage {
+    func ariaCenteredSquareCrop() -> UIImage {
+        guard size.width > 0, size.height > 0 else { return self }
+        guard abs(size.width - size.height) > 0.5 else { return self }
+
+        let side = min(size.width, size.height)
+        let cropOrigin = CGPoint(
+            x: (size.width - side) / 2,
+            y: (size.height - side) / 2
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        format.opaque = false
+
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { _ in
+            draw(at: CGPoint(x: -cropOrigin.x, y: -cropOrigin.y))
         }
     }
 }

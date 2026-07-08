@@ -3,7 +3,7 @@ import Foundation
 struct AriaServerClient {
     var baseURL: URL
 
-    init(baseURL: URL = URL(string: "http://192.168.0.16:8000")!) {
+    init(baseURL: URL = URL(string: "http://100.93.250.104:8000")!) {
         self.baseURL = baseURL
     }
 

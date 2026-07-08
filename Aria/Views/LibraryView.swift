@@ -2,21 +2,27 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @GestureState private var sectionSwipeDistance: CGFloat = 0
     @State private var selectedSection: LibrarySection = .songs
 
     var body: some View {
         NavigationStack {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
+                LazyVStack(alignment: .leading, spacing: 22) {
                     header
                     sectionPicker
                     sectionContent
+                        .id(selectedSection)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .offset(x: clampedSectionSwipeOffset)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 24)
                 .padding(.bottom, 24)
+                .animation(AriaMotion.quickSpring, value: selectedSection)
             }
             .background(Color.ariaBackground.ignoresSafeArea())
+            .simultaneousGesture(sectionSwipeGesture)
             .navigationDestination(for: LibraryRoute.self) { route in
                 destination(for: route)
             }
@@ -58,7 +64,7 @@ struct LibraryView: View {
     }
 
     private var songsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        LazyVStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Songs")
 
             catalogStatus
@@ -72,6 +78,7 @@ struct LibraryView: View {
             } else {
                 ForEach(player.catalog) { track in
                     TrackRow(track: track, source: player.catalog)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
         }
@@ -118,19 +125,22 @@ struct LibraryView: View {
     }
 
     private var albumsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Albums")
 
             ForEach(player.albums) { album in
                 AlbumRow(album: album)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
     }
 
     private var playlistsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             Button {
-                player.createPlaylist()
+                withAnimation(AriaMotion.quickSpring) {
+                    _ = player.createPlaylist()
+                }
             } label: {
                 Label("Create playlist", systemImage: "plus")
                     .font(.headline)
@@ -140,12 +150,13 @@ struct LibraryView: View {
                     .background(.ariaAccent)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
 
             SectionTitle(title: "Playlists")
 
             ForEach(player.playlists) { playlist in
                 PlaylistRow(playlist: playlist)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
     }
@@ -166,6 +177,38 @@ struct LibraryView: View {
                 MissingLibraryItemView(title: "Playlist unavailable")
             }
         }
+    }
+
+    private var clampedSectionSwipeOffset: CGFloat {
+        min(max(sectionSwipeDistance * 0.08, -14), 14)
+    }
+
+    private var sectionSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 28, coordinateSpace: .local)
+            .updating($sectionSwipeDistance) { value, state, _ in
+                guard isSectionSwipe(value) else { return }
+                state = value.translation.width
+            }
+            .onEnded { value in
+                guard isSectionSwipe(value) else { return }
+
+                let distance = abs(value.translation.width)
+                let predictedDistance = abs(value.predictedEndTranslation.width)
+                guard distance > 140 || predictedDistance > 210 else { return }
+
+                let targetSection = value.translation.width < 0 ? selectedSection.next : selectedSection.previous
+                guard targetSection != selectedSection else { return }
+
+                withAnimation(AriaMotion.quickSpring) {
+                    selectedSection = targetSection
+                }
+            }
+    }
+
+    private func isSectionSwipe(_ value: DragGesture.Value) -> Bool {
+        let horizontalDistance = abs(value.translation.width)
+        let verticalDistance = abs(value.translation.height)
+        return horizontalDistance > 32 && horizontalDistance > verticalDistance * 1.55
     }
 }
 
@@ -189,6 +232,28 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
             "Albums"
         case .playlists:
             "Playlists"
+        }
+    }
+
+    var next: LibrarySection {
+        switch self {
+        case .songs:
+            .albums
+        case .albums:
+            .playlists
+        case .playlists:
+            .playlists
+        }
+    }
+
+    var previous: LibrarySection {
+        switch self {
+        case .songs:
+            .songs
+        case .albums:
+            .songs
+        case .playlists:
+            .albums
         }
     }
 }
@@ -227,7 +292,7 @@ private struct AlbumRow: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
         .padding(.vertical, 6)
     }
 }
@@ -260,7 +325,7 @@ private struct PlaylistRow: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
         .padding(.vertical, 6)
     }
 
@@ -293,14 +358,14 @@ private struct AlbumDetailView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 albumHeader
 
                 DetailPlayButton(title: "Play album") {
                     playAlbum()
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     SectionTitle(title: "Songs")
 
                     ForEach(album.tracks) { track in
@@ -350,7 +415,7 @@ private struct AlbumDetailView: View {
         guard let firstTrack = album.tracks.first else { return }
         player.play(firstTrack, from: album.tracks)
 
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+        withAnimation(AriaMotion.playerSpring) {
             player.showPlayer()
         }
     }
@@ -369,14 +434,14 @@ private struct PlaylistDetailView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 24) {
+            LazyVStack(alignment: .leading, spacing: 24) {
                 playlistHeader
 
                 DetailPlayButton(title: "Play playlist", isDisabled: currentPlaylist.tracks.isEmpty) {
                     playPlaylist()
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     SectionTitle(title: "Songs")
 
                     if currentPlaylist.tracks.isEmpty {
@@ -475,7 +540,7 @@ private struct PlaylistDetailView: View {
     private func playPlaylist() {
         player.playPlaylist(currentPlaylist)
 
-        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+        withAnimation(AriaMotion.playerSpring) {
             player.showPlayer()
         }
     }
@@ -501,9 +566,10 @@ private struct DetailPlayButton: View {
                 .background(.ariaAccent)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.45 : 1)
+        .animation(AriaMotion.fast, value: isDisabled)
     }
 }
 

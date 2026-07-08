@@ -20,6 +20,8 @@
 		4A0001132C00000000000001 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002132C00000000000001 /* LibraryView.swift */; };
 		4A0001142C00000000000001 /* PlatformModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002142C00000000000001 /* PlatformModifiers.swift */; };
 		4A0001152C00000000000001 /* AriaServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002152C00000000000001 /* AriaServerClient.swift */; };
+		4A0001162C00000000000001 /* AriaArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002172C00000000000001 /* AriaArtworkCache.swift */; };
+		4A0001172C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4A0002182C00000000000001 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +40,8 @@
 		4A0002142C00000000000001 /* PlatformModifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformModifiers.swift; sourceTree = "<group>"; };
 		4A0002152C00000000000001 /* AriaServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaServerClient.swift; sourceTree = "<group>"; };
 		4A0002162C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4A0002172C00000000000001 /* AriaArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaArtworkCache.swift; sourceTree = "<group>"; };
+		4A0002182C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				4A0002162C00000000000001 /* Info.plist */,
+				4A0002182C00000000000001 /* Assets.xcassets */,
 				4A0004042C00000000000001 /* App */,
 				4A0004052C00000000000001 /* Models */,
 				4A0004062C00000000000001 /* Services */,
@@ -103,6 +108,7 @@
 			children = (
 				4A0002042C00000000000001 /* SampleCatalog.swift */,
 				4A0002152C00000000000001 /* AriaServerClient.swift */,
+				4A0002172C00000000000001 /* AriaArtworkCache.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -194,6 +200,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4A0001172C00000000000001 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -209,6 +216,7 @@
 				4A0001032C00000000000001 /* Playlist.swift in Sources */,
 				4A0001042C00000000000001 /* SampleCatalog.swift in Sources */,
 				4A0001152C00000000000001 /* AriaServerClient.swift in Sources */,
+				4A0001162C00000000000001 /* AriaArtworkCache.swift in Sources */,
 				4A0001052C00000000000001 /* PlayerViewModel.swift in Sources */,
 				4A0001062C00000000000001 /* Color+Aria.swift in Sources */,
 				4A0001072C00000000000001 /* TimeFormatting.swift in Sources */,
@@ -341,6 +349,7 @@
 		4A000B012C00000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = F57TGW3UDL;
@@ -370,6 +379,7 @@
 		4A000B022C00000000000001 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = F57TGW3UDL;

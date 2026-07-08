@@ -11,6 +11,7 @@ struct RootView: View {
                         MiniPlayerBar()
                             .padding(.horizontal, 14)
                             .padding(.bottom, 8)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
 
@@ -23,5 +24,6 @@ struct RootView: View {
         .environmentObject(player)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
+        .animation(AriaMotion.playerSpring, value: player.isPlayerPresented)
     }
 }
