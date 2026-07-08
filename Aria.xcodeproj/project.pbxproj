@@ -1,0 +1,423 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		4A0001012C00000000000001 /* AriaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002012C00000000000001 /* AriaApp.swift */; };
+		4A0001022C00000000000001 /* Track.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002022C00000000000001 /* Track.swift */; };
+		4A0001032C00000000000001 /* Playlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002032C00000000000001 /* Playlist.swift */; };
+		4A0001042C00000000000001 /* SampleCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002042C00000000000001 /* SampleCatalog.swift */; };
+		4A0001052C00000000000001 /* PlayerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002052C00000000000001 /* PlayerViewModel.swift */; };
+		4A0001062C00000000000001 /* Color+Aria.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002062C00000000000001 /* Color+Aria.swift */; };
+		4A0001072C00000000000001 /* TimeFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002072C00000000000001 /* TimeFormatting.swift */; };
+		4A0001082C00000000000001 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002082C00000000000001 /* RootView.swift */; };
+		4A0001092C00000000000001 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002092C00000000000001 /* Components.swift */; };
+		4A0001102C00000000000001 /* NowPlayingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002102C00000000000001 /* NowPlayingView.swift */; };
+		4A0001132C00000000000001 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002132C00000000000001 /* LibraryView.swift */; };
+		4A0001142C00000000000001 /* PlatformModifiers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002142C00000000000001 /* PlatformModifiers.swift */; };
+		4A0001152C00000000000001 /* AriaServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002152C00000000000001 /* AriaServerClient.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4A0000012C00000000000001 /* Aria.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aria.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A0002012C00000000000001 /* AriaApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaApp.swift; sourceTree = "<group>"; };
+		4A0002022C00000000000001 /* Track.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Track.swift; sourceTree = "<group>"; };
+		4A0002032C00000000000001 /* Playlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playlist.swift; sourceTree = "<group>"; };
+		4A0002042C00000000000001 /* SampleCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleCatalog.swift; sourceTree = "<group>"; };
+		4A0002052C00000000000001 /* PlayerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerViewModel.swift; sourceTree = "<group>"; };
+		4A0002062C00000000000001 /* Color+Aria.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Aria.swift"; sourceTree = "<group>"; };
+		4A0002072C00000000000001 /* TimeFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeFormatting.swift; sourceTree = "<group>"; };
+		4A0002082C00000000000001 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		4A0002092C00000000000001 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		4A0002102C00000000000001 /* NowPlayingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingView.swift; sourceTree = "<group>"; };
+		4A0002132C00000000000001 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		4A0002142C00000000000001 /* PlatformModifiers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformModifiers.swift; sourceTree = "<group>"; };
+		4A0002152C00000000000001 /* AriaServerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaServerClient.swift; sourceTree = "<group>"; };
+		4A0002162C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4A0003012C00000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		4A0004012C00000000000001 = {
+			isa = PBXGroup;
+			children = (
+				4A0004022C00000000000001 /* Aria */,
+				4A0004032C00000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		4A0004022C00000000000001 /* Aria */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002162C00000000000001 /* Info.plist */,
+				4A0004042C00000000000001 /* App */,
+				4A0004052C00000000000001 /* Models */,
+				4A0004062C00000000000001 /* Services */,
+				4A0004072C00000000000001 /* ViewModels */,
+				4A0004082C00000000000001 /* Views */,
+				4A0004092C00000000000001 /* Support */,
+			);
+			path = Aria;
+			sourceTree = "<group>";
+		};
+		4A0004032C00000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4A0000012C00000000000001 /* Aria.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		4A0004042C00000000000001 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002012C00000000000001 /* AriaApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		4A0004052C00000000000001 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002022C00000000000001 /* Track.swift */,
+				4A0002032C00000000000001 /* Playlist.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		4A0004062C00000000000001 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002042C00000000000001 /* SampleCatalog.swift */,
+				4A0002152C00000000000001 /* AriaServerClient.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		4A0004072C00000000000001 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002052C00000000000001 /* PlayerViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		4A0004082C00000000000001 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002082C00000000000001 /* RootView.swift */,
+				4A0002092C00000000000001 /* Components.swift */,
+				4A0002102C00000000000001 /* NowPlayingView.swift */,
+				4A0002132C00000000000001 /* LibraryView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		4A0004092C00000000000001 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				4A0002062C00000000000001 /* Color+Aria.swift */,
+				4A0002072C00000000000001 /* TimeFormatting.swift */,
+				4A0002142C00000000000001 /* PlatformModifiers.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4A0005012C00000000000001 /* Aria */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4A0008012C00000000000001 /* Build configuration list for PBXNativeTarget "Aria" */;
+			buildPhases = (
+				4A0006012C00000000000001 /* Sources */,
+				4A0003012C00000000000001 /* Frameworks */,
+				4A0006022C00000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Aria;
+			productName = Aria;
+			productReference = 4A0000012C00000000000001 /* Aria.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4A0007012C00000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1700;
+				LastUpgradeCheck = 1700;
+				TargetAttributes = {
+					4A0005012C00000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+					};
+				};
+			};
+			buildConfigurationList = 4A0009012C00000000000001 /* Build configuration list for PBXProject "Aria" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 4A0004012C00000000000001;
+			productRefGroup = 4A0004032C00000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4A0005012C00000000000001 /* Aria */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		4A0006022C00000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4A0006012C00000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A0001012C00000000000001 /* AriaApp.swift in Sources */,
+				4A0001022C00000000000001 /* Track.swift in Sources */,
+				4A0001032C00000000000001 /* Playlist.swift in Sources */,
+				4A0001042C00000000000001 /* SampleCatalog.swift in Sources */,
+				4A0001152C00000000000001 /* AriaServerClient.swift in Sources */,
+				4A0001052C00000000000001 /* PlayerViewModel.swift in Sources */,
+				4A0001062C00000000000001 /* Color+Aria.swift in Sources */,
+				4A0001072C00000000000001 /* TimeFormatting.swift in Sources */,
+				4A0001142C00000000000001 /* PlatformModifiers.swift in Sources */,
+				4A0001082C00000000000001 /* RootView.swift in Sources */,
+				4A0001092C00000000000001 /* Components.swift in Sources */,
+				4A0001102C00000000000001 /* NowPlayingView.swift in Sources */,
+				4A0001132C00000000000001 /* LibraryView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		4A000A012C00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		4A000A022C00000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		4A000B012C00000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = F57TGW3UDL;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Aria/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Aria;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tofi.aria;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		4A000B022C00000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = F57TGW3UDL;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Aria/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Aria;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tofi.aria;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4A0008012C00000000000001 /* Build configuration list for PBXNativeTarget "Aria" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A000B012C00000000000001 /* Debug */,
+				4A000B022C00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4A0009012C00000000000001 /* Build configuration list for PBXProject "Aria" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A000A012C00000000000001 /* Debug */,
+				4A000A022C00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4A0007012C00000000000001 /* Project object */;
+}
