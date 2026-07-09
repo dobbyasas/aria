@@ -26,9 +26,67 @@ struct AriaServerClient {
             .appendingPathComponent("api")
             .appendingPathComponent("tracks")
 
+        let data = try await sendRequest(to: url, method: "GET")
+        let tracks = try JSONDecoder().decode([Track].self, from: data)
+        guard !tracks.isEmpty else {
+            throw AriaServerError.emptyCatalog
+        }
+
+        return tracks
+    }
+
+    func startDownload(_ request: AriaDownloadRequest) async throws -> AriaDownloadJob {
+        let body = try JSONEncoder().encode(request)
+        var failures: [String] = []
+
+        for baseURL in baseURLs {
+            do {
+                let data = try await sendRequest(
+                    to: downloadsEndpoint(baseURL: baseURL),
+                    method: "POST",
+                    body: body,
+                    contentType: "application/json"
+                )
+                return try JSONDecoder().decode(AriaDownloadJob.self, from: data)
+            } catch {
+                failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
+            }
+        }
+
+        throw AriaServerError.unreachable(failures)
+    }
+
+    func fetchDownloadStatus(id: String) async throws -> AriaDownloadJob {
+        var failures: [String] = []
+
+        for baseURL in baseURLs {
+            do {
+                let data = try await sendRequest(to: downloadStatusEndpoint(id: id, baseURL: baseURL), method: "GET")
+                return try JSONDecoder().decode(AriaDownloadJob.self, from: data)
+            } catch {
+                failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
+            }
+        }
+
+        throw AriaServerError.unreachable(failures)
+    }
+
+    private func sendRequest(
+        to url: URL,
+        method: String,
+        body: Data? = nil,
+        contentType: String? = nil
+    ) async throws -> Data {
         var request = URLRequest(url: url)
+        request.httpMethod = method
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 5
+        request.timeoutInterval = 12
+        request.httpBody = body
+
+        if let contentType {
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -40,12 +98,17 @@ struct AriaServerClient {
             throw AriaServerError.badStatus(httpResponse.statusCode)
         }
 
-        let tracks = try JSONDecoder().decode([Track].self, from: data)
-        guard !tracks.isEmpty else {
-            throw AriaServerError.emptyCatalog
-        }
+        return data
+    }
 
-        return tracks
+    private func downloadsEndpoint(baseURL: URL) -> URL {
+        baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("downloads")
+    }
+
+    private func downloadStatusEndpoint(id: String, baseURL: URL) -> URL {
+        downloadsEndpoint(baseURL: baseURL).appendingPathComponent(id)
     }
 
     private static let defaultBaseURLs = [
@@ -64,6 +127,44 @@ struct AriaServerClient {
             seen.insert(key)
             return true
         }
+    }
+}
+
+struct AriaDownloadRequest: Encodable {
+    var link: String
+    var album: String
+    var albumArtist: String
+    var year: String
+}
+
+struct AriaDownloadJob: Decodable, Identifiable, Equatable {
+    var id: String
+    var status: String
+    var phase: String
+    var message: String
+    var progress: Double
+    var album: String
+    var albumArtist: String
+    var year: String
+    var filesStarted: Int
+    var newFiles: Int?
+    var error: String?
+    var outputTail: [String]
+
+    var isActive: Bool {
+        status == "queued" || status == "running"
+    }
+
+    var isFinished: Bool {
+        status == "succeeded" || status == "failed"
+    }
+
+    var isSuccessful: Bool {
+        status == "succeeded"
+    }
+
+    var progressFraction: Double {
+        min(max(progress, 0), 1)
     }
 }
 

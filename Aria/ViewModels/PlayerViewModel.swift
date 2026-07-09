@@ -13,6 +13,9 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isCatalogLoading = false
     @Published private(set) var catalogErrorMessage: String?
     @Published private(set) var listeningHistory: [Track] = []
+    @Published private(set) var downloadJob: AriaDownloadJob?
+    @Published private(set) var isDownloadStarting = false
+    @Published private(set) var downloadErrorMessage: String?
     @Published var currentTrack: Track?
     @Published var elapsed: TimeInterval = 0
     @Published var isPlaying = false
@@ -34,6 +37,7 @@ final class PlayerViewModel: ObservableObject {
     private var nowPlayingArtwork: MPMediaItemArtwork?
     private var nowPlayingArtworkTrackID: UUID?
     private var nowPlayingArtworkTask: Task<Void, Never>?
+    private var downloadPollTask: Task<Void, Never>?
 
     init(
         catalog: [Track] = [],
@@ -65,6 +69,7 @@ final class PlayerViewModel: ObservableObject {
         }
 
         nowPlayingArtworkTask?.cancel()
+        downloadPollTask?.cancel()
     }
 
     var progress: Double {
@@ -187,6 +192,34 @@ final class PlayerViewModel: ObservableObject {
         }
 
         isCatalogLoading = false
+    }
+
+    func startDownload(link: String, album: String, albumArtist: String, year: String) async {
+        let request = AriaDownloadRequest(
+            link: link.trimmingCharacters(in: .whitespacesAndNewlines),
+            album: album.trimmingCharacters(in: .whitespacesAndNewlines),
+            albumArtist: albumArtist.trimmingCharacters(in: .whitespacesAndNewlines),
+            year: year.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        isDownloadStarting = true
+        downloadErrorMessage = nil
+
+        do {
+            let job = try await serverClient.startDownload(request)
+            downloadJob = job
+            isDownloadStarting = false
+            beginDownloadPolling(id: job.id)
+        } catch {
+            downloadErrorMessage = error.localizedDescription
+            isDownloadStarting = false
+        }
+    }
+
+    func clearFinishedDownload() {
+        guard downloadJob?.isFinished == true else { return }
+        downloadJob = nil
+        downloadErrorMessage = nil
     }
 
     func play(_ track: Track, from collection: [Track]? = nil) {
@@ -477,6 +510,43 @@ final class PlayerViewModel: ObservableObject {
         commandCenter.changePlaybackPositionCommand.isEnabled = hasTrack
         commandCenter.nextTrackCommand.isEnabled = hasTrack && (canSkipToNextTrack || repeatMode == .all)
         commandCenter.previousTrackCommand.isEnabled = hasTrack
+    }
+
+    private func beginDownloadPolling(id: String) {
+        downloadPollTask?.cancel()
+        downloadPollTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 1_250_000_000)
+                } catch {
+                    return
+                }
+
+                guard let self else { return }
+                await self.refreshDownloadStatus(id: id)
+
+                if self.downloadJob?.isFinished == true {
+                    return
+                }
+            }
+        }
+    }
+
+    private func refreshDownloadStatus(id: String) async {
+        do {
+            let job = try await serverClient.fetchDownloadStatus(id: id)
+            downloadJob = job
+
+            if job.isFinished {
+                downloadPollTask?.cancel()
+
+                if job.isSuccessful {
+                    await refreshCatalog()
+                }
+            }
+        } catch {
+            downloadErrorMessage = "Download status failed: \(error.localizedDescription)"
+        }
     }
 
     private func refreshNowPlayingArtwork(for track: Track) {

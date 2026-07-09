@@ -4,6 +4,7 @@ struct LibraryView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @GestureState private var sectionSwipeDistance: CGFloat = 0
     @State private var selectedSection: LibrarySection = .songs
+    @State private var isDownloadSheetPresented = false
 
     var body: some View {
         NavigationStack {
@@ -28,17 +29,40 @@ struct LibraryView: View {
             }
         }
         .background(Color.ariaBackground.ignoresSafeArea())
+        .sheet(isPresented: $isDownloadSheetPresented) {
+            MobileDownloadMusicSheet()
+                .environmentObject(player)
+        }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Library")
-                .font(.system(size: 36, weight: .black, design: .rounded))
-                .foregroundStyle(.ariaTextPrimary)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Library")
+                    .font(.system(size: 36, weight: .black, design: .rounded))
+                    .foregroundStyle(.ariaTextPrimary)
 
-            Text("Songs streamed from your Fedora server.")
-                .font(.subheadline)
-                .foregroundStyle(.ariaTextSecondary)
+                Text("Songs streamed from your Fedora server.")
+                    .font(.subheadline)
+                    .foregroundStyle(.ariaTextSecondary)
+            }
+
+            Spacer()
+
+            Button {
+                isDownloadSheetPresented = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Color.ariaBackground)
+                    .frame(width: 42, height: 42)
+                    .background(Color.ariaAccent)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(AriaPressButtonStyle(pressedScale: 0.94))
+            .disabled(player.isDownloadStarting || player.downloadJob?.isActive == true)
+            .opacity(player.isDownloadStarting || player.downloadJob?.isActive == true ? 0.55 : 1)
+            .accessibilityLabel("Download music")
         }
     }
 
@@ -570,6 +594,182 @@ private struct DetailPlayButton: View {
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.45 : 1)
         .animation(AriaMotion.fast, value: isDisabled)
+    }
+}
+
+private struct MobileDownloadMusicSheet: View {
+    @EnvironmentObject private var player: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var link = ""
+    @State private var album = ""
+    @State private var albumArtist = ""
+    @State private var year = ""
+
+    private var canStartDownload: Bool {
+        !trimmed(link).isEmpty
+        && !trimmed(album).isEmpty
+        && !trimmed(albumArtist).isEmpty
+        && !player.isDownloadStarting
+        && player.downloadJob?.isActive != true
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Download") {
+                    TextField("Playlist / album link", text: $link)
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+
+                    TextField("Album name", text: $album)
+                    TextField("Album artist", text: $albumArtist)
+                    TextField("Year", text: $year)
+                        .keyboardType(.numberPad)
+                }
+
+                if let downloadJob = player.downloadJob {
+                    Section("Progress") {
+                        MobileDownloadProgressView(job: downloadJob)
+                    }
+                }
+
+                if let error = player.downloadErrorMessage {
+                    Section("Problem") {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task {
+                            await player.startDownload(
+                                link: link,
+                                album: album,
+                                albumArtist: albumArtist,
+                                year: year
+                            )
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+
+                            if player.isDownloadStarting {
+                                ProgressView()
+                                    .tint(.ariaBackground)
+                            } else {
+                                Label("Download", systemImage: "arrow.down.circle.fill")
+                                    .font(.headline)
+                            }
+
+                            Spacer()
+                        }
+                    }
+                    .disabled(!canStartDownload)
+                    .listRowBackground(Color.ariaAccent.opacity(canStartDownload ? 1 : 0.4))
+                    .foregroundStyle(Color.ariaBackground)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.ariaBackground)
+            .navigationTitle("Download Music")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(player.downloadJob?.isFinished == true ? "Close" : "Cancel") {
+                        if player.downloadJob?.isFinished == true {
+                            player.clearFinishedDownload()
+                        }
+
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+        .tint(.ariaAccent)
+    }
+
+    private func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct MobileDownloadProgressView: View {
+    let job: AriaDownloadJob
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(statusTitle, systemImage: statusImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(statusColor)
+
+                Spacer()
+
+                Text("\(Int(job.progressFraction * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.ariaTextSecondary)
+            }
+
+            ProgressView(value: job.progressFraction)
+                .tint(.ariaAccent)
+
+            Text(job.phase)
+                .font(.caption)
+                .foregroundStyle(.ariaTextSecondary)
+
+            Text(job.message)
+                .font(.caption)
+                .foregroundStyle(.ariaTextSecondary)
+                .lineLimit(3)
+
+            if let newFiles = job.newFiles, job.isSuccessful {
+                Text("\(newFiles) new song\(newFiles == 1 ? "" : "s") added.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.ariaAccent)
+            }
+
+            if let error = job.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var statusTitle: String {
+        switch job.status {
+        case "succeeded":
+            "Done"
+        case "failed":
+            "Failed"
+        default:
+            "Downloading"
+        }
+    }
+
+    private var statusImage: String {
+        switch job.status {
+        case "succeeded":
+            "checkmark.circle.fill"
+        case "failed":
+            "exclamationmark.triangle.fill"
+        default:
+            "arrow.down.circle.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch job.status {
+        case "succeeded":
+            .ariaAccent
+        case "failed":
+            .orange
+        default:
+            .ariaTextPrimary
+        }
     }
 }
 
