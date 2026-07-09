@@ -124,7 +124,7 @@ final class PlayerViewModel: ObservableObject {
 
     private static func albums(from catalog: [Track]) -> [AriaAlbum] {
         let groupedTracks = Dictionary(grouping: catalog) { track in
-            "\(track.artist)-\(track.album)"
+            albumGroupingKey(for: track)
         }
 
         return groupedTracks.values.compactMap { tracks in
@@ -133,7 +133,7 @@ final class PlayerViewModel: ObservableObject {
 
             return AriaAlbum(
                 title: firstTrack.album,
-                artist: firstTrack.artist,
+                artist: albumArtist(for: sortedTracks),
                 year: firstTrack.year,
                 tracks: sortedTracks
             )
@@ -142,7 +142,30 @@ final class PlayerViewModel: ObservableObject {
             firstAlbum.title.localizedCaseInsensitiveCompare(secondAlbum.title) == .orderedAscending
         }
     }
-    
+
+    private static func albumGroupingKey(for track: Track) -> String {
+        let album = track.album.trimmingCharacters(in: .whitespacesAndNewlines)
+        return album.isEmpty ? "unknown album" : album.localizedLowercase
+    }
+
+    private static func albumArtist(for tracks: [Track]) -> String {
+        var artistsByKey: [String: String] = [:]
+
+        for track in tracks {
+            let artist = track.artist.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !artist.isEmpty else { continue }
+
+            artistsByKey[artist.localizedLowercase] = artist
+        }
+
+        let artists = artistsByKey.values.sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+
+        guard let firstArtist = artists.first else { return "Unknown Artist" }
+        return artists.count == 1 ? firstArtist : "Various Artists"
+    }
+
     func showPlayer() {
         isPlayerPresented = true
     }

@@ -2,7 +2,8 @@
 
 Aria is a native SwiftUI iPhone music player prototype. This first version focuses on the player experience: queue controls, shuffle/repeat, saved songs, progress seeking, volume, search, and a small browse/library shell around the player.
 
-The app now loads its catalog from the Fedora song server at `http://192.168.0.192:8000/api/tracks` and streams each song with `AVPlayer`.
+The app now loads its catalog from the Fedora song server and streams each song with `AVPlayer`.
+It tries Tailscale first at `http://100.93.250.104:8000`, then falls back to the local Wi-Fi address `http://192.168.0.16:8000`.
 
 ## Open the App
 
@@ -25,4 +26,5 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 - `Aria/ViewModels`: player state and audio playback.
 - `Aria/Views`: SwiftUI screens and reusable UI components.
 - `Aria/Support`: styling and formatting helpers.
-- `server`: Python song server for the Fedora laptop.
+
+The Python song server lives on the Fedora laptop at `~/aria-server/server`.
