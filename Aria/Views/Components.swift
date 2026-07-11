@@ -94,7 +94,8 @@ struct TrackRow: View {
     var source: [Track]
     var showAlbum = true
     var playlistForRemoval: AriaPlaylist? = nil
-    var removesFromQueueOnLeftSwipe = false
+    var usesCustomQueueSwipe = false
+    var queueDragItemProvider: (() -> NSItemProvider)? = nil
 
     var body: some View {
         rowContent
@@ -105,7 +106,7 @@ struct TrackRow: View {
             .onTapGesture {
                 handleRowTap()
             }
-            .swipeActions(edge: .trailing, allowsFullSwipe: removesFromQueueOnLeftSwipe) {
+            .swipeActions(edge: .trailing, allowsFullSwipe: !usesCustomQueueSwipe) {
                 trailingSwipeActions
             }
             .swipeActions(edge: .leading, allowsFullSwipe: playlistForRemoval != nil) {
@@ -122,19 +123,11 @@ struct TrackRow: View {
 
     @ViewBuilder
     private var trailingSwipeActions: some View {
-        if removesFromQueueOnLeftSwipe {
-            Button(role: .destructive) {
-                withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
-                    player.removeFromQueue(track)
-                }
-            } label: {
-                Label("Remove", systemImage: "trash")
-            }
-        } else {
+        if !usesCustomQueueSwipe {
             Button {
-                addTrackToFront()
+                addTrackToQueue()
             } label: {
-                Label("Up next", systemImage: "arrow.up.to.line")
+                Label("Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
             }
             .tint(.ariaAccent)
 
@@ -200,8 +193,52 @@ struct TrackRow: View {
                     .font(.caption)
                     .foregroundStyle(.ariaTextSecondary)
             }
+
+            trackActionMenu
+
+            if let queueDragItemProvider {
+                Image(systemName: "line.3.horizontal")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.ariaTextSecondary)
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+                    .onDrag(queueDragItemProvider)
+                    .accessibilityLabel("Reorder \(track.title)")
+            }
         }
         .contentShape(Rectangle())
+    }
+
+    private var trackActionMenu: some View {
+        Menu {
+            Button {
+                playNow()
+            } label: {
+                Label("Play Now", systemImage: "play.fill")
+            }
+
+            Button {
+                withAnimation(AriaMotion.quickSpring) {
+                    player.playNext(track)
+                }
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            Button {
+                addTrackToQueue()
+            } label: {
+                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.callout.weight(.bold))
+                .foregroundStyle(.ariaTextSecondary)
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.9))
+        .accessibilityLabel("More options for \(track.title)")
     }
 
     private func handleRowTap() {
@@ -211,9 +248,16 @@ struct TrackRow: View {
         }
     }
 
-    private func addTrackToFront() {
+    private func playNow() {
+        player.playNow(track)
+        withAnimation(AriaMotion.playerSpring) {
+            player.showPlayer()
+        }
+    }
+
+    private func addTrackToQueue() {
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
-            player.addToFront(track)
+            player.addToQueue(track)
         }
     }
 }

@@ -2,8 +2,10 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject private var player: PlayerViewModel
-    @GestureState private var sectionSwipeDistance: CGFloat = 0
     @State private var selectedSection: LibrarySection = .songs
+    @State private var songSearchText = ""
+    @State private var albumSearchText = ""
+    @State private var playlistSearchText = ""
     @State private var isDownloadSheetPresented = false
 
     var body: some View {
@@ -12,10 +14,10 @@ struct LibraryView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     header
                     sectionPicker
+                    librarySearchField
                     sectionContent
                         .id(selectedSection)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
-                        .offset(x: clampedSectionSwipeOffset)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 24)
@@ -23,7 +25,7 @@ struct LibraryView: View {
                 .animation(AriaMotion.quickSpring, value: selectedSection)
             }
             .background(Color.ariaBackground.ignoresSafeArea())
-            .simultaneousGesture(sectionSwipeGesture)
+            .scrollDismissesKeyboard(.interactively)
             .navigationDestination(for: LibraryRoute.self) { route in
                 destination(for: route)
             }
@@ -75,6 +77,55 @@ struct LibraryView: View {
         .pickerStyle(.segmented)
     }
 
+    private var librarySearchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.ariaTextSecondary)
+
+            TextField(selectedSection.searchPrompt, text: activeSearchText)
+                .font(.subheadline)
+                .foregroundStyle(.ariaTextPrimary)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+
+            if !activeSearchText.wrappedValue.isEmpty {
+                Button {
+                    withAnimation(AriaMotion.fast) {
+                        activeSearchText.wrappedValue = ""
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.ariaTextSecondary)
+                }
+                .buttonStyle(AriaPressButtonStyle(pressedScale: 0.9))
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(.white.opacity(0.07))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.white.opacity(0.08), lineWidth: 1)
+        )
+        .animation(AriaMotion.fast, value: activeSearchText.wrappedValue.isEmpty)
+    }
+
+    private var activeSearchText: Binding<String> {
+        switch selectedSection {
+        case .songs:
+            $songSearchText
+        case .albums:
+            $albumSearchText
+        case .playlists:
+            $playlistSearchText
+        }
+    }
+
     @ViewBuilder
     private var sectionContent: some View {
         switch selectedSection {
@@ -88,7 +139,9 @@ struct LibraryView: View {
     }
 
     private var songsSection: some View {
-        LazyVStack(alignment: .leading, spacing: 10) {
+        let songs = filteredSongs
+
+        return LazyVStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Songs")
 
             catalogStatus
@@ -99,9 +152,11 @@ struct LibraryView: View {
                     .foregroundStyle(.ariaTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 8)
+            } else if songs.isEmpty, !songSearchText.isEmpty {
+                SearchEmptyState(itemName: "songs", query: songSearchText)
             } else {
-                ForEach(player.catalog) { track in
-                    TrackRow(track: track, source: player.catalog)
+                ForEach(songs) { track in
+                    TrackRow(track: track, source: songs)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
@@ -149,18 +204,26 @@ struct LibraryView: View {
     }
 
     private var albumsSection: some View {
-        LazyVStack(alignment: .leading, spacing: 12) {
+        let albums = filteredAlbums
+
+        return LazyVStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Albums")
 
-            ForEach(player.albums) { album in
-                AlbumRow(album: album)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if albums.isEmpty, !albumSearchText.isEmpty {
+                SearchEmptyState(itemName: "albums", query: albumSearchText)
+            } else {
+                ForEach(albums) { album in
+                    AlbumRow(album: album)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
         }
     }
 
     private var playlistsSection: some View {
-        LazyVStack(alignment: .leading, spacing: 12) {
+        let playlists = filteredPlaylists
+
+        return LazyVStack(alignment: .leading, spacing: 12) {
             Button {
                 withAnimation(AriaMotion.quickSpring) {
                     _ = player.createPlaylist()
@@ -178,10 +241,44 @@ struct LibraryView: View {
 
             SectionTitle(title: "Playlists")
 
-            ForEach(player.playlists) { playlist in
-                PlaylistRow(playlist: playlist)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            if playlists.isEmpty, !playlistSearchText.isEmpty {
+                SearchEmptyState(itemName: "playlists", query: playlistSearchText)
+            } else {
+                ForEach(playlists) { playlist in
+                    PlaylistRow(playlist: playlist)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
+        }
+    }
+
+    private var filteredSongs: [Track] {
+        let query = songSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return player.catalog }
+
+        return player.catalog.filter { track in
+            track.title.localizedStandardContains(query)
+                || track.artist.localizedStandardContains(query)
+                || track.album.localizedStandardContains(query)
+        }
+    }
+
+    private var filteredAlbums: [AriaAlbum] {
+        let query = albumSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return player.albums }
+
+        return player.albums.filter { album in
+            album.title.localizedStandardContains(query)
+                || album.artist.localizedStandardContains(query)
+        }
+    }
+
+    private var filteredPlaylists: [AriaPlaylist] {
+        let query = playlistSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return player.playlists }
+
+        return player.playlists.filter { playlist in
+            playlist.title.localizedStandardContains(query)
         }
     }
 
@@ -203,37 +300,6 @@ struct LibraryView: View {
         }
     }
 
-    private var clampedSectionSwipeOffset: CGFloat {
-        min(max(sectionSwipeDistance * 0.08, -14), 14)
-    }
-
-    private var sectionSwipeGesture: some Gesture {
-        DragGesture(minimumDistance: 28, coordinateSpace: .local)
-            .updating($sectionSwipeDistance) { value, state, _ in
-                guard isSectionSwipe(value) else { return }
-                state = value.translation.width
-            }
-            .onEnded { value in
-                guard isSectionSwipe(value) else { return }
-
-                let distance = abs(value.translation.width)
-                let predictedDistance = abs(value.predictedEndTranslation.width)
-                guard distance > 140 || predictedDistance > 210 else { return }
-
-                let targetSection = value.translation.width < 0 ? selectedSection.next : selectedSection.previous
-                guard targetSection != selectedSection else { return }
-
-                withAnimation(AriaMotion.quickSpring) {
-                    selectedSection = targetSection
-                }
-            }
-    }
-
-    private func isSectionSwipe(_ value: DragGesture.Value) -> Bool {
-        let horizontalDistance = abs(value.translation.width)
-        let verticalDistance = abs(value.translation.height)
-        return horizontalDistance > 32 && horizontalDistance > verticalDistance * 1.55
-    }
 }
 
 private enum LibraryRoute: Hashable {
@@ -259,26 +325,39 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
         }
     }
 
-    var next: LibrarySection {
+    var searchPrompt: String {
         switch self {
         case .songs:
-            .albums
+            "Search songs"
         case .albums:
-            .playlists
+            "Search albums"
         case .playlists:
-            .playlists
+            "Search playlists"
         }
     }
+}
 
-    var previous: LibrarySection {
-        switch self {
-        case .songs:
-            .songs
-        case .albums:
-            .songs
-        case .playlists:
-            .albums
+private struct SearchEmptyState: View {
+    let itemName: String
+    let query: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.ariaTextSecondary)
+
+            Text("No \(itemName) found")
+                .font(.headline)
+                .foregroundStyle(.ariaTextPrimary)
+
+            Text("Nothing matches \"\(query)\".")
+                .font(.subheadline)
+                .foregroundStyle(.ariaTextSecondary)
+                .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
     }
 }
 

@@ -38,6 +38,7 @@ final class PlayerViewModel: ObservableObject {
     private var nowPlayingArtworkTrackID: UUID?
     private var nowPlayingArtworkTask: Task<Void, Never>?
     private var downloadPollTask: Task<Void, Never>?
+    private var manuallyQueuedTrackIDs: [UUID] = []
 
     init(
         catalog: [Track] = [],
@@ -224,11 +225,18 @@ final class PlayerViewModel: ObservableObject {
 
     func play(_ track: Track, from collection: [Track]? = nil) {
         if let collection, !collection.isEmpty {
+            let keepsExistingQueue = collection.elementsEqual(queue) { firstTrack, secondTrack in
+                firstTrack.id == secondTrack.id
+            }
             queue = collection
+            if !keepsExistingQueue {
+                manuallyQueuedTrackIDs.removeAll()
+            }
         } else if !queue.contains(track) {
             queue.insert(track, at: 0)
         }
 
+        manuallyQueuedTrackIDs.removeAll { $0 == track.id }
         currentTrack = track
         elapsed = 0
         isPlaying = true
@@ -359,23 +367,95 @@ final class PlayerViewModel: ObservableObject {
         showPlayer()
     }
 
-    func addToFront(_ track: Track) {
-        guard currentTrack?.id != track.id else { return }
-
-        queue.removeAll { $0.id == track.id }
-
-        guard let currentTrack, let currentIndex = queue.firstIndex(where: { $0.id == currentTrack.id }) else {
-            queue.insert(track, at: 0)
+    func playNow(_ track: Track) {
+        if currentTrack?.id == track.id {
+            restart(track)
             return
         }
 
-        queue.insert(track, at: queue.index(after: currentIndex))
+        removeQueuedOccurrence(of: track)
+        queue.insert(track, at: insertionIndexAfterCurrent())
+        play(track, from: queue)
+    }
+
+    func playNext(_ track: Track) {
+        guard currentTrack?.id != track.id else { return }
+
+        removeQueuedOccurrence(of: track)
+        queue.insert(track, at: insertionIndexAfterCurrent())
+        manuallyQueuedTrackIDs.insert(track.id, at: 0)
+    }
+
+    func addToQueue(_ track: Track) {
+        guard currentTrack?.id != track.id else { return }
+
+        removeQueuedOccurrence(of: track)
+
+        let firstUpcomingIndex = insertionIndexAfterCurrent()
+        let lastManualIndex = manuallyQueuedTrackIDs
+            .compactMap { queuedID in
+                queue.firstIndex { $0.id == queuedID }
+            }
+            .filter { $0 >= firstUpcomingIndex }
+            .max()
+        let insertionIndex = min((lastManualIndex ?? (firstUpcomingIndex - 1)) + 1, queue.endIndex)
+
+        queue.insert(track, at: insertionIndex)
+        manuallyQueuedTrackIDs.append(track.id)
+    }
+
+    func moveQueuedTrack(_ trackID: UUID, to targetID: UUID) {
+        guard trackID != targetID else { return }
+        guard currentTrack?.id != trackID, currentTrack?.id != targetID else { return }
+        guard
+            let sourceIndex = queue.firstIndex(where: { $0.id == trackID }),
+            let targetIndex = queue.firstIndex(where: { $0.id == targetID })
+        else {
+            return
+        }
+
+        let firstUpcomingIndex: Int
+        if let currentTrack, let currentIndex = queue.firstIndex(where: { $0.id == currentTrack.id }) {
+            firstUpcomingIndex = queue.index(after: currentIndex)
+        } else {
+            firstUpcomingIndex = queue.startIndex
+        }
+
+        guard sourceIndex >= firstUpcomingIndex, targetIndex >= firstUpcomingIndex else { return }
+
+        let movesDown = sourceIndex < targetIndex
+        let movedTrack = queue.remove(at: sourceIndex)
+        guard let adjustedTargetIndex = queue.firstIndex(where: { $0.id == targetID }) else { return }
+
+        let destinationIndex = movesDown ? queue.index(after: adjustedTargetIndex) : adjustedTargetIndex
+        queue.insert(movedTrack, at: min(destinationIndex, queue.endIndex))
+
+        var manualIDs = Set(manuallyQueuedTrackIDs)
+        manualIDs.insert(trackID)
+        manuallyQueuedTrackIDs = queue.map(\.id).filter { manualIDs.contains($0) }
+    }
+
+    private func insertionIndexAfterCurrent() -> Int {
+        guard
+            let currentTrack,
+            let currentIndex = queue.firstIndex(where: { $0.id == currentTrack.id })
+        else {
+            return queue.startIndex
+        }
+
+        return queue.index(after: currentIndex)
+    }
+
+    private func removeQueuedOccurrence(of track: Track) {
+        queue.removeAll { $0.id == track.id }
+        manuallyQueuedTrackIDs.removeAll { $0 == track.id }
     }
 
     func removeFromQueue(_ track: Track) {
         guard currentTrack?.id != track.id else { return }
 
         queue.removeAll { $0.id == track.id }
+        manuallyQueuedTrackIDs.removeAll { $0 == track.id }
     }
 
     @discardableResult
@@ -605,6 +685,7 @@ final class PlayerViewModel: ObservableObject {
         catalog = tracks
         albums = Self.albums(from: tracks)
         queue = tracks
+        manuallyQueuedTrackIDs.removeAll()
         playlists = [
             AriaPlaylist(
                 title: "Fedora songs",
@@ -716,12 +797,14 @@ final class PlayerViewModel: ObservableObject {
         guard queue.count > 1 else { return }
         guard let currentTrack, let currentIndex = queue.firstIndex(of: currentTrack) else {
             queue.shuffle()
+            manuallyQueuedTrackIDs.removeAll()
             return
         }
 
         var otherTracks = queue
         otherTracks.remove(at: currentIndex)
         queue = [currentTrack] + otherTracks.shuffled()
+        manuallyQueuedTrackIDs.removeAll()
     }
 
     private func addToHistory(_ track: Track) {

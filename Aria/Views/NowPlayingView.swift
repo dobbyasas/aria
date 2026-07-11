@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerViewModel
@@ -6,6 +7,7 @@ struct NowPlayingView: View {
     @GestureState private var trackSwipeDistance: CGFloat = 0
     @State private var backgroundArtwork: ArtworkPalette?
     @State private var backgroundArtworkTrackID: UUID?
+    @State private var draggedQueueTrackID: UUID?
 
     var body: some View {
         Group {
@@ -322,12 +324,19 @@ struct NowPlayingView: View {
             } else {
                 LazyVStack(spacing: 4) {
                     ForEach(player.upNextPreview) { track in
-                        TrackRow(
-                            track: track,
-                            source: player.queue,
-                            showAlbum: false,
-                            removesFromQueueOnLeftSwipe: true
-                        )
+                        QueueTrackRow(draggedTrackID: $draggedQueueTrackID, track: track)
+                            .onDrop(
+                                of: [UTType.text.identifier],
+                                delegate: QueueReorderDropDelegate(
+                                    targetTrackID: track.id,
+                                    draggedTrackID: $draggedQueueTrackID,
+                                    moveAction: { sourceID, targetID in
+                                        withAnimation(AriaMotion.quickSpring) {
+                                            player.moveQueuedTrack(sourceID, to: targetID)
+                                        }
+                                    }
+                                )
+                            )
                     }
 
                     if player.remainingUpNextCount > player.upNextPreview.count {
@@ -379,5 +388,124 @@ struct NowPlayingView: View {
                 .tint(.ariaAccent)
             }
         }
+    }
+}
+
+private struct QueueTrackRow: View {
+    @EnvironmentObject private var player: PlayerViewModel
+    @Binding var draggedTrackID: UUID?
+    @State private var swipeOffset: CGFloat = 0
+    @State private var swipeStartOffset: CGFloat?
+    @State private var isHorizontalSwipe = false
+
+    let track: Track
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            removeButton
+
+            TrackRow(
+                track: track,
+                source: player.queue,
+                showAlbum: false,
+                usesCustomQueueSwipe: true,
+                queueDragItemProvider: dragItemProvider
+            )
+            .padding(.horizontal, 4)
+            .background(Color.ariaBackground.opacity(0.94))
+            .offset(x: swipeOffset)
+            .simultaneousGesture(swipeGesture)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityAction(named: "Remove from queue") {
+            removeFromQueue()
+        }
+    }
+
+    private var removeButton: some View {
+        Button(role: .destructive) {
+            removeFromQueue()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "trash.fill")
+                    .font(.callout.weight(.semibold))
+
+                Text("Remove")
+                    .font(.caption2.weight(.bold))
+            }
+            .foregroundStyle(.white)
+            .frame(width: 82)
+            .frame(height: 64)
+            .background(Color.red)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .onChanged { value in
+                if swipeStartOffset == nil {
+                    let horizontalDistance = abs(value.translation.width)
+                    let verticalDistance = abs(value.translation.height)
+                    guard horizontalDistance > verticalDistance * 1.25 else { return }
+
+                    swipeStartOffset = swipeOffset
+                    isHorizontalSwipe = true
+                }
+
+                guard isHorizontalSwipe else { return }
+                let proposedOffset = (swipeStartOffset ?? 0) + value.translation.width
+                swipeOffset = min(max(proposedOffset, -132), 0)
+            }
+            .onEnded { value in
+                defer {
+                    swipeStartOffset = nil
+                    isHorizontalSwipe = false
+                }
+
+                guard isHorizontalSwipe else { return }
+                let predictedOffset = (swipeStartOffset ?? 0) + value.predictedEndTranslation.width
+
+                if swipeOffset < -104 || predictedOffset < -150 {
+                    removeFromQueue()
+                } else {
+                    withAnimation(AriaMotion.quickSpring) {
+                        swipeOffset = swipeOffset < -42 ? -82 : 0
+                    }
+                }
+            }
+    }
+
+    private func dragItemProvider() -> NSItemProvider {
+        swipeOffset = 0
+        draggedTrackID = track.id
+        return NSItemProvider(object: track.id.uuidString as NSString)
+    }
+
+    private func removeFromQueue() {
+        withAnimation(AriaMotion.quickSpring) {
+            swipeOffset = 0
+            player.removeFromQueue(track)
+        }
+    }
+}
+
+private struct QueueReorderDropDelegate: DropDelegate {
+    let targetTrackID: UUID
+    @Binding var draggedTrackID: UUID?
+    let moveAction: (UUID, UUID) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedTrackID, draggedTrackID != targetTrackID else { return }
+        moveAction(draggedTrackID, targetTrackID)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedTrackID = nil
+        return true
     }
 }
