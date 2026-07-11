@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct NowPlayingView: View {
@@ -324,14 +325,18 @@ struct NowPlayingView: View {
             } else {
                 LazyVStack(spacing: 4) {
                     ForEach(player.upNextPreview) { track in
-                        QueueTrackRow(draggedTrackID: $draggedQueueTrackID, track: track)
+                        QueueTrackRow(
+                            draggedTrackID: $draggedQueueTrackID,
+                            track: track,
+                            isDragging: draggedQueueTrackID == track.id
+                        )
                             .onDrop(
                                 of: [UTType.text.identifier],
                                 delegate: QueueReorderDropDelegate(
                                     targetTrackID: track.id,
                                     draggedTrackID: $draggedQueueTrackID,
                                     moveAction: { sourceID, targetID in
-                                        withAnimation(AriaMotion.quickSpring) {
+                                        withAnimation(AriaMotion.queueReorder) {
                                             player.moveQueuedTrack(sourceID, to: targetID)
                                         }
                                     }
@@ -399,10 +404,16 @@ private struct QueueTrackRow: View {
     @State private var isHorizontalSwipe = false
 
     let track: Track
+    let isDragging: Bool
 
     var body: some View {
         ZStack(alignment: .trailing) {
             removeButton
+                .mask(alignment: .trailing) {
+                    Rectangle()
+                        .frame(width: deleteRevealWidth)
+                }
+                .allowsHitTesting(deleteRevealWidth >= 70)
 
             TrackRow(
                 track: track,
@@ -417,9 +428,17 @@ private struct QueueTrackRow: View {
             .simultaneousGesture(swipeGesture)
         }
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .scaleEffect(isDragging ? 0.985 : 1)
+        .opacity(isDragging ? 0.7 : 1)
+        .zIndex(isDragging ? 1 : 0)
+        .animation(AriaMotion.queueReorder, value: isDragging)
         .accessibilityAction(named: "Remove from queue") {
             removeFromQueue()
         }
+    }
+
+    private var deleteRevealWidth: CGFloat {
+        min(max(-swipeOffset, 0), 82)
     }
 
     private var removeButton: some View {
@@ -479,6 +498,7 @@ private struct QueueTrackRow: View {
     private func dragItemProvider() -> NSItemProvider {
         swipeOffset = 0
         draggedTrackID = track.id
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.75)
         return NSItemProvider(object: track.id.uuidString as NSString)
     }
 
@@ -497,6 +517,7 @@ private struct QueueReorderDropDelegate: DropDelegate {
 
     func dropEntered(info: DropInfo) {
         guard let draggedTrackID, draggedTrackID != targetTrackID else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
         moveAction(draggedTrackID, targetTrackID)
     }
 
@@ -505,6 +526,7 @@ private struct QueueReorderDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
         draggedTrackID = nil
         return true
     }

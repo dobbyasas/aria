@@ -4,6 +4,12 @@ import Foundation
 import MediaPlayer
 import UIKit
 
+struct QueueNotice: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+    let symbolName: String
+}
+
 @MainActor
 final class PlayerViewModel: ObservableObject {
     @Published private(set) var catalog: [Track]
@@ -16,6 +22,7 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var downloadJob: AriaDownloadJob?
     @Published private(set) var isDownloadStarting = false
     @Published private(set) var downloadErrorMessage: String?
+    @Published private(set) var queueNotice: QueueNotice?
     @Published var currentTrack: Track?
     @Published var elapsed: TimeInterval = 0
     @Published var isPlaying = false
@@ -38,6 +45,7 @@ final class PlayerViewModel: ObservableObject {
     private var nowPlayingArtworkTrackID: UUID?
     private var nowPlayingArtworkTask: Task<Void, Never>?
     private var downloadPollTask: Task<Void, Never>?
+    private var queueNoticeTask: Task<Void, Never>?
     private var manuallyQueuedTrackIDs: [UUID] = []
 
     init(
@@ -71,6 +79,7 @@ final class PlayerViewModel: ObservableObject {
 
         nowPlayingArtworkTask?.cancel()
         downloadPollTask?.cancel()
+        queueNoticeTask?.cancel()
     }
 
     var progress: Double {
@@ -379,15 +388,22 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func playNext(_ track: Track) {
-        guard currentTrack?.id != track.id else { return }
+        guard currentTrack?.id != track.id else {
+            publishQueueNotice(message: "Already playing \(track.title)", symbolName: "waveform")
+            return
+        }
 
         removeQueuedOccurrence(of: track)
         queue.insert(track, at: insertionIndexAfterCurrent())
         manuallyQueuedTrackIDs.insert(track.id, at: 0)
+        publishQueueNotice(message: "\(track.title) will play next", symbolName: "text.line.first.and.arrowtriangle.forward")
     }
 
     func addToQueue(_ track: Track) {
-        guard currentTrack?.id != track.id else { return }
+        guard currentTrack?.id != track.id else {
+            publishQueueNotice(message: "Already playing \(track.title)", symbolName: "waveform")
+            return
+        }
 
         removeQueuedOccurrence(of: track)
 
@@ -402,6 +418,7 @@ final class PlayerViewModel: ObservableObject {
 
         queue.insert(track, at: insertionIndex)
         manuallyQueuedTrackIDs.append(track.id)
+        publishQueueNotice(message: "Added \(track.title) to queue", symbolName: "checkmark.circle.fill")
     }
 
     func moveQueuedTrack(_ trackID: UUID, to targetID: UUID) {
@@ -456,6 +473,12 @@ final class PlayerViewModel: ObservableObject {
 
         queue.removeAll { $0.id == track.id }
         manuallyQueuedTrackIDs.removeAll { $0 == track.id }
+        publishQueueNotice(message: "Removed \(track.title) from queue", symbolName: "trash.fill")
+    }
+
+    func dismissQueueNotice() {
+        queueNoticeTask?.cancel()
+        queueNotice = nil
     }
 
     @discardableResult
@@ -501,6 +524,20 @@ final class PlayerViewModel: ObservableObject {
 
     private func subtitle(forTrackCount count: Int) -> String {
         count == 1 ? "1 song" : "\(count) songs"
+    }
+
+    private func publishQueueNotice(message: String, symbolName: String) {
+        let notice = QueueNotice(message: message, symbolName: symbolName)
+        queueNoticeTask?.cancel()
+        queueNotice = notice
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+        queueNoticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            guard !Task.isCancelled, self?.queueNotice?.id == notice.id else { return }
+            self?.queueNotice = nil
+        }
     }
 
     private func configureAudioSession() {

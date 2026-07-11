@@ -6,6 +6,7 @@ enum AriaMotion {
     static let quickSpring = Animation.spring(response: 0.24, dampingFraction: 0.86)
     static let playerSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
     static let press = Animation.spring(response: 0.18, dampingFraction: 0.78)
+    static let queueReorder = Animation.interactiveSpring(response: 0.2, dampingFraction: 0.9, blendDuration: 0.08)
 }
 
 struct AriaPressButtonStyle: ButtonStyle {
@@ -89,6 +90,7 @@ struct ArtworkView: View {
 struct TrackRow: View {
     @EnvironmentObject private var player: PlayerViewModel
     @State private var isAddToPlaylistPresented = false
+    @State private var isTrackActionsPresented = false
 
     let track: Track
     var source: [Track]
@@ -103,9 +105,6 @@ struct TrackRow: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .animation(AriaMotion.fast, value: player.currentTrack?.id)
-            .onTapGesture {
-                handleRowTap()
-            }
             .swipeActions(edge: .trailing, allowsFullSwipe: !usesCustomQueueSwipe) {
                 trailingSwipeActions
             }
@@ -154,6 +153,34 @@ struct TrackRow: View {
     }
 
     private var rowContent: some View {
+        HStack(spacing: 8) {
+            Button {
+                handleRowTap()
+            } label: {
+                trackIdentity
+            }
+            .buttonStyle(.plain)
+
+            trackActionButton
+
+            if let queueDragItemProvider {
+                Image(systemName: "line.3.horizontal")
+                    .font(.callout.weight(.bold))
+                    .foregroundStyle(.ariaTextSecondary)
+                    .frame(width: 44, height: 48)
+                    .background(.white.opacity(0.055))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(Rectangle())
+                    .onDrag(queueDragItemProvider) {
+                        QueueDragPreview(track: track)
+                    }
+                    .accessibilityLabel("Reorder \(track.title)")
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var trackIdentity: some View {
         HStack(spacing: 12) {
             ArtworkView(track: track, size: 52)
 
@@ -188,57 +215,52 @@ struct TrackRow: View {
                     .foregroundStyle(.ariaAccent)
                     .contentTransition(.symbolEffect(.replace))
                     .symbolEffect(.variableColor.iterative, options: .repeating.speed(3), isActive: player.isPlaying)
-            } else {
+            } else if !usesCustomQueueSwipe {
                 Text(track.duration.ariaClockTime)
                     .font(.caption)
                     .foregroundStyle(.ariaTextSecondary)
             }
-
-            trackActionMenu
-
-            if let queueDragItemProvider {
-                Image(systemName: "line.3.horizontal")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.ariaTextSecondary)
-                    .frame(width: 32, height: 44)
-                    .contentShape(Rectangle())
-                    .onDrag(queueDragItemProvider)
-                    .accessibilityLabel("Reorder \(track.title)")
-            }
         }
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
 
-    private var trackActionMenu: some View {
-        Menu {
-            Button {
-                playNow()
-            } label: {
-                Label("Play Now", systemImage: "play.fill")
-            }
-
-            Button {
-                withAnimation(AriaMotion.quickSpring) {
-                    player.playNext(track)
-                }
-            } label: {
-                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
-            }
-
-            Button {
-                addTrackToQueue()
-            } label: {
-                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
+    private var trackActionButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            isTrackActionsPresented = true
         } label: {
             Image(systemName: "ellipsis")
-                .font(.callout.weight(.bold))
+                .font(.headline.weight(.bold))
                 .foregroundStyle(.ariaTextSecondary)
-                .frame(width: 36, height: 44)
+                .frame(width: 48, height: 48)
+                .background(.white.opacity(isTrackActionsPresented ? 0.13 : 0.055))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.9))
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.92))
         .accessibilityLabel("More options for \(track.title)")
+        .popover(isPresented: $isTrackActionsPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            TrackActionsPopover(
+                track: track,
+                playNow: {
+                    isTrackActionsPresented = false
+                    playNow()
+                },
+                playNext: {
+                    isTrackActionsPresented = false
+                    withAnimation(AriaMotion.quickSpring) {
+                        player.playNext(track)
+                    }
+                },
+                addToQueue: {
+                    isTrackActionsPresented = false
+                    addTrackToQueue()
+                }
+            )
+            .presentationCompactAdaptation(.popover)
+            .presentationBackground(Color.ariaSurfaceRaised)
+        }
     }
 
     private func handleRowTap() {
@@ -259,6 +281,106 @@ struct TrackRow: View {
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             player.addToQueue(track)
         }
+    }
+}
+
+private struct TrackActionsPopover: View {
+    let track: Track
+    let playNow: () -> Void
+    let playNext: () -> Void
+    let addToQueue: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(track.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.ariaTextSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 2)
+
+            actionButton(title: "Play Now", systemImage: "play.fill", action: playNow)
+            actionButton(
+                title: "Play Next",
+                systemImage: "text.line.first.and.arrowtriangle.forward",
+                action: playNext
+            )
+            actionButton(
+                title: "Add to Queue",
+                systemImage: "text.line.last.and.arrowtriangle.forward",
+                action: addToQueue
+            )
+        }
+        .padding(10)
+        .frame(width: 258)
+        .background(Color.ariaSurfaceRaised)
+    }
+
+    private func actionButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Image(systemName: systemImage)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.ariaAccent)
+                    .frame(width: 24)
+
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.ariaTextPrimary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 13)
+            .frame(height: 54)
+        }
+        .buttonStyle(TrackActionButtonStyle())
+    }
+}
+
+private struct TrackActionButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color.ariaAccent.opacity(0.2) : .white.opacity(0.055))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(AriaMotion.press, value: configuration.isPressed)
+    }
+}
+
+private struct QueueDragPreview: View {
+    let track: Track
+
+    var body: some View {
+        HStack(spacing: 11) {
+            ArtworkView(track: track, size: 42, cornerRadius: 6)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(track.title)
+                    .font(.headline)
+                    .foregroundStyle(.ariaTextPrimary)
+                    .lineLimit(1)
+
+                Text(track.artist)
+                    .font(.caption)
+                    .foregroundStyle(.ariaTextSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Image(systemName: "line.3.horizontal")
+                .font(.callout.weight(.bold))
+                .foregroundStyle(.ariaTextSecondary)
+        }
+        .padding(10)
+        .frame(width: 276)
+        .background(Color.ariaSurfaceRaised)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.white.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 14, x: 0, y: 8)
     }
 }
 
