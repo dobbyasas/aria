@@ -22,6 +22,9 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var downloadJob: AriaDownloadJob?
     @Published private(set) var isDownloadStarting = false
     @Published private(set) var downloadErrorMessage: String?
+    @Published private(set) var youtubeMusicResults: [YouTubeMusicAlbumResult] = []
+    @Published private(set) var isSearchingYouTubeMusic = false
+    @Published private(set) var youtubeMusicSearchError: String?
     @Published private(set) var queueNotice: QueueNotice?
     @Published var currentTrack: Track?
     @Published var elapsed: TimeInterval = 0
@@ -36,6 +39,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isPlayerPresented = true
 
     private let serverClient: AriaServerClient
+    private let youtubeMusicSearchClient = YouTubeMusicSearchClient()
     private var audioPlayer: AVPlayer?
     private var endObserver: NSObjectProtocol?
     private var catalogTask: Task<Void, Never>?
@@ -205,6 +209,8 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func startDownload(link: String, album: String, albumArtist: String, year: String) async {
+        guard !isDownloadStarting, downloadJob?.isActive != true else { return }
+
         let request = AriaDownloadRequest(
             link: link.trimmingCharacters(in: .whitespacesAndNewlines),
             album: album.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -224,6 +230,90 @@ final class PlayerViewModel: ObservableObject {
             downloadErrorMessage = error.localizedDescription
             isDownloadStarting = false
         }
+    }
+
+    func searchYouTubeMusicAlbums(query: String) async {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            youtubeMusicResults = []
+            youtubeMusicSearchError = nil
+            return
+        }
+
+        isSearchingYouTubeMusic = true
+        youtubeMusicSearchError = nil
+        youtubeMusicResults = []
+
+        do {
+            let results = try await youtubeMusicSearchClient.searchAlbums(query: query)
+            youtubeMusicResults = results
+            youtubeMusicSearchError = results.isEmpty
+                ? "No YouTube Music albums matched that search."
+                : nil
+        } catch {
+            youtubeMusicResults = []
+            youtubeMusicSearchError = error.localizedDescription
+        }
+
+        isSearchingYouTubeMusic = false
+    }
+
+    func startDownload(_ result: YouTubeMusicAlbumResult) async {
+        guard !isAlbumDownloaded(result) else { return }
+
+        await startDownload(
+            link: result.downloadLink,
+            album: result.title,
+            albumArtist: result.artist,
+            year: result.year
+        )
+    }
+
+    func isAlbumDownloaded(_ result: YouTubeMusicAlbumResult) -> Bool {
+        let resultTitle = Self.canonicalAlbumName(result.title)
+        let resultArtist = Self.canonicalArtistName(result.artist)
+
+        return albums.contains { album in
+            Self.canonicalAlbumName(album.title) == resultTitle
+                && Self.canonicalArtistName(album.artist) == resultArtist
+        }
+    }
+
+    func isDownloading(_ result: YouTubeMusicAlbumResult) -> Bool {
+        guard let downloadJob, downloadJob.isActive else { return false }
+
+        return Self.canonicalAlbumName(downloadJob.album) == Self.canonicalAlbumName(result.title)
+            && Self.canonicalArtistName(downloadJob.albumArtist) == Self.canonicalArtistName(result.artist)
+    }
+
+    private static func canonicalAlbumName(_ value: String) -> String {
+        let titleBeforeVariant = value.components(separatedBy: "|").first ?? value
+        let withoutEditionNotes = titleBeforeVariant.replacingOccurrences(
+            of: #"\([^)]*\)|\[[^\]]*\]"#,
+            with: "",
+            options: .regularExpression
+        )
+        let editionWords: Set<String> = [
+            "anniversary", "bonus", "complete", "deluxe", "disc", "disk", "edition",
+            "expanded", "reissue", "remaster", "remastered", "repented", "redux",
+            "version"
+        ]
+
+        return normalizedWords(in: withoutEditionNotes)
+            .filter { !editionWords.contains($0) && Int($0) == nil }
+            .joined(separator: " ")
+    }
+
+    private static func canonicalArtistName(_ value: String) -> String {
+        normalizedWords(in: value).joined(separator: " ")
+    }
+
+    private static func normalizedWords(in value: String) -> [String] {
+        value
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
     }
 
     func clearFinishedDownload() {

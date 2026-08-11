@@ -4,7 +4,7 @@ Aria is a native SwiftUI iPhone music player prototype. This first version focus
 
 The app now loads its catalog from the Fedora song server and streams each song with `AVPlayer`.
 It tries Tailscale first at `http://100.93.250.104:8000`, then falls back to the local Wi-Fi address `http://192.168.0.16:8000`.
-The Library plus button opens a download form that calls the server-side downloader and shows job progress while new songs are saved into the Fedora songs folder.
+The Library plus button opens a downloader with YouTube Music album search, artwork and metadata, repeatable three-at-a-time results, downloaded-album detection, a manual-link fallback, and live server job progress while new songs are saved into the Fedora songs folder.
 
 ## Open the App
 

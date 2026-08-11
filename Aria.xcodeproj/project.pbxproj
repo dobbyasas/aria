@@ -22,6 +22,7 @@
 		4A0001152C00000000000001 /* AriaServerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002152C00000000000001 /* AriaServerClient.swift */; };
 		4A0001162C00000000000001 /* AriaArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002172C00000000000001 /* AriaArtworkCache.swift */; };
 		4A0001172C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4A0002182C00000000000001 /* Assets.xcassets */; };
+		4A0001182C00000000000001 /* YouTubeMusicSearchClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -42,6 +43,7 @@
 		4A0002162C00000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4A0002172C00000000000001 /* AriaArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaArtworkCache.swift; sourceTree = "<group>"; };
 		4A0002182C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeMusicSearchClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,6 +111,7 @@
 				4A0002042C00000000000001 /* SampleCatalog.swift */,
 				4A0002152C00000000000001 /* AriaServerClient.swift */,
 				4A0002172C00000000000001 /* AriaArtworkCache.swift */,
+				4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -217,6 +220,7 @@
 				4A0001042C00000000000001 /* SampleCatalog.swift in Sources */,
 				4A0001152C00000000000001 /* AriaServerClient.swift in Sources */,
 				4A0001162C00000000000001 /* AriaArtworkCache.swift in Sources */,
+				4A0001182C00000000000001 /* YouTubeMusicSearchClient.swift in Sources */,
 				4A0001052C00000000000001 /* PlayerViewModel.swift in Sources */,
 				4A0001062C00000000000001 /* Color+Aria.swift in Sources */,
 				4A0001072C00000000000001 /* TimeFormatting.swift in Sources */,

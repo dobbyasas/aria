@@ -683,6 +683,8 @@ private struct MobileDownloadMusicSheet: View {
     @State private var album = ""
     @State private var albumArtist = ""
     @State private var year = ""
+    @State private var youtubeMusicQuery = ""
+    @State private var visibleYouTubeResultCount = 3
 
     private var canStartDownload: Bool {
         !trimmed(link).isEmpty
@@ -692,10 +694,68 @@ private struct MobileDownloadMusicSheet: View {
         && player.downloadJob?.isActive != true
     }
 
+    private var canSearchYouTubeMusic: Bool {
+        !trimmed(youtubeMusicQuery).isEmpty && !player.isSearchingYouTubeMusic
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                Section("Download") {
+                Section("Search YouTube Music") {
+                    HStack(spacing: 10) {
+                        TextField("Album or artist", text: $youtubeMusicQuery)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.search)
+                            .onSubmit {
+                                searchYouTubeMusic()
+                            }
+
+                        Button {
+                            searchYouTubeMusic()
+                        } label: {
+                            if player.isSearchingYouTubeMusic {
+                                ProgressView()
+                            } else {
+                                Image(systemName: "magnifyingglass")
+                            }
+                        }
+                        .disabled(!canSearchYouTubeMusic)
+                        .accessibilityLabel("Search YouTube Music")
+                    }
+
+                    if let error = player.youtubeMusicSearchError {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+
+                    ForEach(Array(player.youtubeMusicResults.prefix(visibleYouTubeResultCount))) { result in
+                        MobileYouTubeMusicAlbumResultRow(result: result)
+                    }
+
+                    if visibleYouTubeResultCount < player.youtubeMusicResults.count {
+                        Button {
+                            visibleYouTubeResultCount = min(
+                                visibleYouTubeResultCount + 3,
+                                player.youtubeMusicResults.count
+                            )
+                        } label: {
+                            HStack {
+                                Text("Showing \(visibleYouTubeResultCount) of \(player.youtubeMusicResults.count)")
+                                    .font(.caption)
+                                    .foregroundStyle(.ariaTextSecondary)
+
+                                Spacer()
+
+                                Label("Load More", systemImage: "chevron.down")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                        }
+                    }
+                }
+
+                Section("Add Link Manually") {
                     TextField("Playlist / album link", text: $link)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
@@ -737,7 +797,7 @@ private struct MobileDownloadMusicSheet: View {
                                 ProgressView()
                                     .tint(.ariaBackground)
                             } else {
-                                Label("Download", systemImage: "arrow.down.circle.fill")
+                                Label("Download Link", systemImage: "arrow.down.circle.fill")
                                     .font(.headline)
                             }
 
@@ -771,6 +831,98 @@ private struct MobileDownloadMusicSheet: View {
 
     private func trimmed(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func searchYouTubeMusic() {
+        guard canSearchYouTubeMusic else { return }
+        let query = youtubeMusicQuery
+        visibleYouTubeResultCount = 3
+
+        Task {
+            await player.searchYouTubeMusicAlbums(query: query)
+        }
+    }
+}
+
+private struct MobileYouTubeMusicAlbumResultRow: View {
+    @EnvironmentObject private var player: PlayerViewModel
+
+    let result: YouTubeMusicAlbumResult
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: result.artworkURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                case .failure:
+                    artworkPlaceholder
+                case .empty:
+                    ProgressView()
+                @unknown default:
+                    artworkPlaceholder
+                }
+            }
+            .frame(width: 54, height: 54)
+            .background(.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(result.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .lineLimit(2)
+
+                Text(resultSubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.ariaTextSecondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 6)
+
+            resultAction
+        }
+        .padding(.vertical, 3)
+    }
+
+    @ViewBuilder
+    private var resultAction: some View {
+        if player.isAlbumDownloaded(result) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.ariaAccent)
+                .accessibilityLabel("Downloaded")
+        } else if player.isDownloading(result) {
+            ProgressView()
+                .tint(.ariaAccent)
+                .accessibilityLabel("Downloading")
+        } else {
+            Button {
+                Task {
+                    await player.startDownload(result)
+                }
+            } label: {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.ariaAccent)
+            .disabled(player.isDownloadStarting || player.downloadJob?.isActive == true)
+            .accessibilityLabel("Download \(result.title)")
+        }
+    }
+
+    private var artworkPlaceholder: some View {
+        Image(systemName: "square.stack")
+            .foregroundStyle(.ariaTextSecondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var resultSubtitle: String {
+        result.year.isEmpty ? result.artist : "\(result.artist) • \(result.year)"
     }
 }
 
