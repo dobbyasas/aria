@@ -22,32 +22,19 @@ struct NowPlayingView: View {
 
     private func playerView(for track: Track) -> some View {
         GeometryReader { geometry in
-            let artworkSize = min(geometry.size.width - 56, 340)
+            let isTablet = UIDevice.current.userInterfaceIdiom == .pad
+            let usesWideLayout = isTablet && geometry.size.width >= 780
+            let compactArtworkLimit: CGFloat = isTablet ? 420 : 340
+            let compactHorizontalInset: CGFloat = isTablet ? 96 : 56
+            let artworkSize = min(geometry.size.width - compactHorizontalInset, compactArtworkLimit)
 
             ZStack {
                 background(for: track)
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 24) {
-                        pullHandle
-                            .padding(.top, 10)
-
-                        header(for: track)
-
-                        swipeableTrackIdentity(for: track, artworkSize: artworkSize)
-
-                        progressSection(for: track)
-
-                        mainControls
-
-                        queuePreview
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 28)
-                    .frame(maxWidth: 440)
-                    .frame(maxWidth: .infinity)
-                    .offset(y: min(pullDistance * 0.18, 18))
-                    .animation(.spring(response: 0.24, dampingFraction: 0.84), value: pullDistance)
+                if usesWideLayout {
+                    widePlayerLayout(for: track, in: geometry.size)
+                } else {
+                    compactPlayerLayout(for: track, artworkSize: artworkSize, isTablet: isTablet)
                 }
             }
             .simultaneousGesture(pullToLibraryGesture)
@@ -56,6 +43,60 @@ struct NowPlayingView: View {
                 await loadBackgroundArtwork(for: track)
             }
         }
+    }
+
+    private func compactPlayerLayout(for track: Track, artworkSize: CGFloat, isTablet: Bool) -> some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: isTablet ? 28 : 24) {
+                pullHandle
+                    .padding(.top, 10)
+
+                header(for: track)
+
+                swipeableTrackIdentity(for: track, artworkSize: artworkSize)
+
+                progressSection(for: track)
+
+                mainControls
+
+                queuePreview
+            }
+            .padding(.horizontal, isTablet ? 32 : 24)
+            .padding(.bottom, 28)
+            .frame(maxWidth: isTablet ? 600 : 440)
+            .frame(maxWidth: .infinity)
+            .offset(y: min(pullDistance * 0.18, 18))
+            .animation(.spring(response: 0.24, dampingFraction: 0.84), value: pullDistance)
+        }
+    }
+
+    private func widePlayerLayout(for track: Track, in size: CGSize) -> some View {
+        let artworkSize = min(size.width * 0.4, size.height * 0.48, 430)
+
+        return HStack(alignment: .center, spacing: 42) {
+            VStack(spacing: 24) {
+                header(for: track)
+
+                swipeableTrackIdentity(for: track, artworkSize: artworkSize)
+
+                progressSection(for: track)
+
+                mainControls
+            }
+            .frame(maxWidth: 510)
+
+            ScrollView(showsIndicators: false) {
+                queuePreview
+                    .padding(.vertical, 4)
+            }
+            .frame(maxWidth: 440, maxHeight: min(size.height - 72, 760))
+        }
+        .padding(.horizontal, 42)
+        .padding(.vertical, 32)
+        .frame(maxWidth: 1080, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .offset(y: min(pullDistance * 0.12, 12))
+        .animation(.spring(response: 0.24, dampingFraction: 0.84), value: pullDistance)
     }
 
     private func background(for track: Track) -> some View {

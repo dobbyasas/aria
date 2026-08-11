@@ -1,7 +1,9 @@
 import SwiftUI
+import UIKit
 
 struct LibraryView: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedSection: LibrarySection = .songs
     @State private var songSearchText = ""
     @State private var albumSearchText = ""
@@ -19,9 +21,11 @@ struct LibraryView: View {
                         .id(selectedSection)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 24)
+                .padding(.horizontal, usesTabletLayout ? 36 : 20)
+                .padding(.top, usesTabletLayout ? 34 : 24)
                 .padding(.bottom, 24)
+                .frame(maxWidth: usesTabletLayout ? 1060 : .infinity)
+                .frame(maxWidth: .infinity)
                 .animation(AriaMotion.quickSpring, value: selectedSection)
             }
             .background(Color.ariaBackground.ignoresSafeArea())
@@ -37,11 +41,15 @@ struct LibraryView: View {
         }
     }
 
+    private var usesTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
     private var header: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Library")
-                    .font(.system(size: 36, weight: .black, design: .rounded))
+                    .font(.system(size: usesTabletLayout ? 44 : 36, weight: .black, design: .rounded))
                     .foregroundStyle(.ariaTextPrimary)
 
                 Text("Songs streamed from your Fedora server.")
@@ -203,14 +211,25 @@ struct LibraryView: View {
         }
     }
 
+    @ViewBuilder
     private var albumsSection: some View {
         let albums = filteredAlbums
 
-        return LazyVStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: usesTabletLayout ? 18 : 12) {
             SectionTitle(title: "Albums")
 
             if albums.isEmpty, !albumSearchText.isEmpty {
                 SearchEmptyState(itemName: "albums", query: albumSearchText)
+            } else if usesTabletLayout {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 176, maximum: 218), spacing: 20, alignment: .top)],
+                    alignment: .leading,
+                    spacing: 24
+                ) {
+                    ForEach(albums) { album in
+                        TabletAlbumCard(album: album)
+                    }
+                }
             } else {
                 ForEach(albums) { album in
                     AlbumRow(album: album)
@@ -243,6 +262,16 @@ struct LibraryView: View {
 
             if playlists.isEmpty, !playlistSearchText.isEmpty {
                 SearchEmptyState(itemName: "playlists", query: playlistSearchText)
+            } else if usesTabletLayout {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 176, maximum: 218), spacing: 20, alignment: .top)],
+                    alignment: .leading,
+                    spacing: 24
+                ) {
+                    ForEach(playlists) { playlist in
+                        TabletPlaylistCard(playlist: playlist)
+                    }
+                }
             } else {
                 ForEach(playlists) { playlist in
                     PlaylistRow(playlist: playlist)
@@ -454,8 +483,106 @@ private struct PlaylistRow: View {
     }
 }
 
+private struct TabletAlbumCard: View {
+    let album: AriaAlbum
+
+    var body: some View {
+        NavigationLink(value: LibraryRoute.album(album.id)) {
+            VStack(alignment: .leading, spacing: 12) {
+                if let artworkTrack = album.artworkTrack {
+                    ArtworkView(track: artworkTrack, size: 152, cornerRadius: 10)
+                        .frame(maxWidth: .infinity)
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(album.title)
+                        .font(.headline)
+                        .foregroundStyle(.ariaTextPrimary)
+                        .lineLimit(2)
+
+                    Text(album.artist)
+                        .font(.subheadline)
+                        .foregroundStyle(.ariaTextSecondary)
+                        .lineLimit(1)
+
+                    Text(String(album.year))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.ariaAccent)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.045))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.white.opacity(0.07), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
+    }
+}
+
+private struct TabletPlaylistCard: View {
+    let playlist: AriaPlaylist
+
+    var body: some View {
+        NavigationLink(value: LibraryRoute.playlist(playlist.id)) {
+            VStack(alignment: .leading, spacing: 12) {
+                artwork
+                    .frame(maxWidth: .infinity)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(playlist.title)
+                        .font(.headline)
+                        .foregroundStyle(.ariaTextPrimary)
+                        .lineLimit(2)
+
+                    Text(playlist.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(.ariaTextSecondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.white.opacity(0.045))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(.white.opacity(0.07), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let firstTrack = playlist.tracks.first {
+            ArtworkView(track: firstTrack, size: 152, cornerRadius: 10)
+        } else {
+            ZStack {
+                Color.ariaSurfaceRaised
+
+                Image(systemName: "music.note.list")
+                    .font(.system(size: 44, weight: .semibold))
+                    .foregroundStyle(.ariaTextSecondary)
+            }
+            .frame(width: 152, height: 152)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(.white.opacity(0.08), lineWidth: 1)
+            )
+        }
+    }
+}
+
 private struct AlbumDetailView: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     let album: AriaAlbum
 
@@ -476,9 +603,11 @@ private struct AlbumDetailView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
+            .padding(.horizontal, usesTabletLayout ? 36 : 20)
+            .padding(.top, usesTabletLayout ? 30 : 18)
             .padding(.bottom, 32)
+            .frame(maxWidth: usesTabletLayout ? 920 : .infinity)
+            .frame(maxWidth: .infinity)
         }
         .background(Color.ariaBackground.ignoresSafeArea())
         .navigationTitle(album.title)
@@ -489,7 +618,7 @@ private struct AlbumDetailView: View {
     private var albumHeader: some View {
         VStack(spacing: 18) {
             if let artworkTrack = album.artworkTrack {
-                ArtworkView(track: artworkTrack, size: 196)
+                ArtworkView(track: artworkTrack, size: usesTabletLayout ? 280 : 196)
                     .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 14)
             }
 
@@ -514,6 +643,10 @@ private struct AlbumDetailView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var usesTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
     private func playAlbum() {
         guard let firstTrack = album.tracks.first else { return }
         player.play(firstTrack, from: album.tracks)
@@ -526,6 +659,7 @@ private struct AlbumDetailView: View {
 
 private struct PlaylistDetailView: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isRenaming = false
     @State private var draftTitle = ""
 
@@ -564,9 +698,11 @@ private struct PlaylistDetailView: View {
                     }
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
+            .padding(.horizontal, usesTabletLayout ? 36 : 20)
+            .padding(.top, usesTabletLayout ? 30 : 18)
             .padding(.bottom, 32)
+            .frame(maxWidth: usesTabletLayout ? 920 : .infinity)
+            .frame(maxWidth: .infinity)
         }
         .background(Color.ariaBackground.ignoresSafeArea())
         .navigationTitle(currentPlaylist.title)
@@ -617,10 +753,14 @@ private struct PlaylistDetailView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var usesTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
     @ViewBuilder
     private var playlistArtwork: some View {
         if let firstTrack = currentPlaylist.tracks.first {
-            ArtworkView(track: firstTrack, size: 196)
+            ArtworkView(track: firstTrack, size: usesTabletLayout ? 280 : 196)
                 .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 14)
         } else {
             ZStack {
@@ -630,7 +770,10 @@ private struct PlaylistDetailView: View {
                     .font(.system(size: 54, weight: .semibold))
                     .foregroundStyle(.ariaTextSecondary)
             }
-            .frame(width: 196, height: 196)
+            .frame(
+                width: usesTabletLayout ? 280 : 196,
+                height: usesTabletLayout ? 280 : 196
+            )
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)

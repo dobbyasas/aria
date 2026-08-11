@@ -1,6 +1,8 @@
 # Aria
 
-Aria is a native SwiftUI iPhone music player prototype. This first version focuses on the player experience: queue controls, shuffle/repeat, saved songs, progress seeking, volume, search, and a small browse/library shell around the player.
+Aria is a native universal SwiftUI music player for iPhone and iPad. It includes queue controls, shuffle/repeat, saved songs, progress seeking, volume, search, and a responsive library/player shell.
+
+On iPad, Aria uses a persistent navigation sidebar with library counts and a mini-player, adaptive album and playlist grids, spacious detail screens, and a two-column Now Playing layout with the queue alongside the main controls. Narrow iPad multitasking automatically falls back to the compact iPhone layout.
 
 The app now loads its catalog from the Fedora song server and streams each song with `AVPlayer`.
 It tries Tailscale first at `http://100.93.250.104:8000`, then falls back to the local Wi-Fi address `http://192.168.0.16:8000`.
