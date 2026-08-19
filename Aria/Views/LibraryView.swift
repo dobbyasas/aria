@@ -20,6 +20,10 @@ struct LibraryView: View {
                     sectionContent
                         .id(selectedSection)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
+
+                    if !usesTabletLayout {
+                        versionFooter
+                    }
                 }
                 .padding(.horizontal, usesTabletLayout ? 36 : 20)
                 .padding(.top, usesTabletLayout ? 34 : 24)
@@ -43,6 +47,15 @@ struct LibraryView: View {
 
     private var usesTabletLayout: Bool {
         UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
+    private var versionFooter: some View {
+        Text(AriaRelease.displayText)
+            .font(.caption2.monospacedDigit().weight(.medium))
+            .foregroundStyle(.ariaTextSecondary.opacity(0.72))
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+            .accessibilityLabel("Aria \(AriaRelease.displayText)")
     }
 
     private var header: some View {

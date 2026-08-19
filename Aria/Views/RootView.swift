@@ -182,6 +182,12 @@ private struct TabletRootView: View {
 
             Spacer(minLength: 18)
 
+            Text(AriaRelease.displayText)
+                .font(.caption2.monospacedDigit().weight(.medium))
+                .foregroundStyle(.ariaTextSecondary.opacity(0.72))
+                .padding(.bottom, player.currentTrack == nil ? 18 : 0)
+                .accessibilityLabel("Aria \(AriaRelease.displayText)")
+
             if player.currentTrack != nil {
                 MiniPlayerBar()
                     .padding(12)

@@ -1,4 +1,15 @@
+import Foundation
 import SwiftUI
+
+enum AriaRelease {
+    static let version = Bundle.main.object(
+        forInfoDictionaryKey: "CFBundleShortVersionString"
+    ) as? String ?? "1.1.3"
+
+    static var displayText: String {
+        "Version \(version)"
+    }
+}
 
 @main
 struct AriaApp: App {
