@@ -39,6 +39,7 @@ final class PlayerViewModel: ObservableObject {
     @Published var isPlayerPresented = true
 
     private let serverClient: AriaServerClient
+    private let playlistStore: PlaylistStore
     private let youtubeMusicSearchClient = YouTubeMusicSearchClient()
     private var audioPlayer: AVPlayer?
     private var endObserver: NSObjectProtocol?
@@ -52,18 +53,25 @@ final class PlayerViewModel: ObservableObject {
     private var queueNoticeTask: Task<Void, Never>?
     private var manuallyQueuedTrackIDs: [UUID] = []
 
+    private static let libraryPlaylistID = UUID(
+        uuidString: "00000000-0000-0000-0000-000000000001"
+    )!
+
     init(
         catalog: [Track] = [],
         playlists: [AriaPlaylist] = [],
         serverClient: AriaServerClient = AriaServerClient(),
+        playlistStore: PlaylistStore = PlaylistStore(),
         automaticallyLoadsCatalog: Bool = true
     ) {
         self.catalog = catalog
         self.albums = Self.albums(from: catalog)
-        self.playlists = playlists
+        self.playlists = (playlists.isEmpty ? playlistStore.load() : playlists)
+            .filter { $0.id != Self.libraryPlaylistID }
         self.queue = catalog
         self.currentTrack = catalog.first
         self.serverClient = serverClient
+        self.playlistStore = playlistStore
 
         configureAudioSession()
         configureRemoteCommands()
@@ -582,6 +590,7 @@ final class PlayerViewModel: ObservableObject {
         }
 
         playlists.insert(playlist, at: 0)
+        persistPlaylists()
         return playlist
     }
 
@@ -591,6 +600,7 @@ final class PlayerViewModel: ObservableObject {
 
         playlists[index].tracks.append(track)
         playlists[index].subtitle = subtitle(forTrackCount: playlists[index].tracks.count)
+        persistPlaylists()
     }
 
     func remove(_ track: Track, from playlist: AriaPlaylist) {
@@ -598,6 +608,7 @@ final class PlayerViewModel: ObservableObject {
 
         playlists[index].tracks.removeAll { $0.id == track.id }
         playlists[index].subtitle = subtitle(forTrackCount: playlists[index].tracks.count)
+        persistPlaylists()
     }
 
     func rename(_ playlist: AriaPlaylist, to title: String) {
@@ -606,6 +617,7 @@ final class PlayerViewModel: ObservableObject {
         guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
 
         playlists[index].title = trimmedTitle
+        persistPlaylists()
     }
 
     func playlist(_ playlist: AriaPlaylist, contains track: Track) -> Bool {
@@ -614,6 +626,12 @@ final class PlayerViewModel: ObservableObject {
 
     private func subtitle(forTrackCount count: Int) -> String {
         count == 1 ? "1 song" : "\(count) songs"
+    }
+
+    private func persistPlaylists() {
+        playlistStore.save(
+            playlists.filter { $0.id != Self.libraryPlaylistID }
+        )
     }
 
     private func publishQueueNotice(message: String, symbolName: String) {
@@ -809,17 +827,31 @@ final class PlayerViewModel: ObservableObject {
         audioPlayer?.pause()
         removeEndObserver()
 
+        let tracksByID = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0) })
+        let userPlaylists = playlists
+            .filter { $0.id != Self.libraryPlaylistID }
+            .map { playlist in
+                var refreshedPlaylist = playlist
+                refreshedPlaylist.tracks = playlist.tracks.map { track in
+                    tracksByID[track.id] ?? track
+                }
+                refreshedPlaylist.subtitle = subtitle(forTrackCount: refreshedPlaylist.tracks.count)
+                return refreshedPlaylist
+            }
+
         catalog = tracks
         albums = Self.albums(from: tracks)
         queue = tracks
         manuallyQueuedTrackIDs.removeAll()
         playlists = [
             AriaPlaylist(
+                id: Self.libraryPlaylistID,
                 title: "Fedora songs",
                 subtitle: subtitle(forTrackCount: tracks.count),
                 tracks: tracks
             )
-        ]
+        ] + userPlaylists
+        persistPlaylists()
         listeningHistory = []
         currentTrack = tracks.first
         elapsed = 0
@@ -966,6 +998,8 @@ final class PlayerViewModel: ObservableObject {
                 playlists[playlistIndex].tracks[trackIndex].duration = duration
             }
         }
+
+        persistPlaylists()
 
         updateNowPlayingInfo()
     }
