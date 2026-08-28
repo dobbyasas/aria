@@ -35,6 +35,24 @@ struct AriaServerClient {
         return tracks
     }
 
+    func fetchLyrics(for track: Track) async throws -> TrackLyrics {
+        var failures: [String] = []
+
+        for baseURL in baseURLs {
+            do {
+                let data = try await sendRequest(
+                    to: lyricsEndpoint(for: track, baseURL: baseURL),
+                    method: "GET"
+                )
+                return try JSONDecoder().decode(TrackLyrics.self, from: data)
+            } catch {
+                failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
+            }
+        }
+
+        throw AriaServerError.unreachable(failures)
+    }
+
     func startDownload(_ request: AriaDownloadRequest) async throws -> AriaDownloadJob {
         let body = try JSONEncoder().encode(request)
         var failures: [String] = []
@@ -109,6 +127,14 @@ struct AriaServerClient {
 
     private func downloadStatusEndpoint(id: String, baseURL: URL) -> URL {
         downloadsEndpoint(baseURL: baseURL).appendingPathComponent(id)
+    }
+
+    private func lyricsEndpoint(for track: Track, baseURL: URL) -> URL {
+        baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("tracks")
+            .appendingPathComponent(track.id.uuidString.lowercased())
+            .appendingPathComponent("lyrics")
     }
 
     private static let defaultBaseURLs = [

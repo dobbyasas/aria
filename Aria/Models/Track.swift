@@ -46,6 +46,33 @@ struct ArtworkPalette: Hashable, Codable {
     var symbolName: String
 }
 
+struct TrackLyrics: Decodable, Equatable {
+    var trackID: String
+    var available: Bool
+    var instrumental: Bool
+    var isSynced: Bool
+    var source: String
+    var plainLyrics: String?
+    var syncedLines: [LyricLine]
+
+    var plainLines: [String] {
+        plainLyrics?
+            .split(whereSeparator: \.isNewline)
+            .map(String.init) ?? []
+    }
+
+    func activeLineID(at elapsed: TimeInterval) -> String? {
+        guard isSynced else { return nil }
+        return syncedLines.last { $0.startTime <= elapsed + 0.05 }?.id
+    }
+}
+
+struct LyricLine: Decodable, Equatable, Identifiable {
+    var id: String
+    var startTime: TimeInterval
+    var text: String
+}
+
 enum RepeatMode: String, CaseIterable, Identifiable {
     case off
     case one
