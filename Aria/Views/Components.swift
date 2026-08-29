@@ -256,6 +256,12 @@ struct TrackRow: View {
                 addToQueue: {
                     isTrackActionsPresented = false
                     addTrackToQueue()
+                },
+                addToPlaylist: {
+                    isTrackActionsPresented = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        isAddToPlaylistPresented = true
+                    }
                 }
             )
             .presentationCompactAdaptation(.popover)
@@ -289,6 +295,7 @@ private struct TrackActionsPopover: View {
     let playNow: () -> Void
     let playNext: () -> Void
     let addToQueue: () -> Void
+    let addToPlaylist: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -309,6 +316,11 @@ private struct TrackActionsPopover: View {
                 title: "Add to Queue",
                 systemImage: "text.line.last.and.arrowtriangle.forward",
                 action: addToQueue
+            )
+            actionButton(
+                title: "Add to Playlist",
+                systemImage: "text.badge.plus",
+                action: addToPlaylist
             )
         }
         .padding(10)
