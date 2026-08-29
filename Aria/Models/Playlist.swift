@@ -5,12 +5,20 @@ struct AriaPlaylist: Identifiable, Hashable, Codable {
     var title: String
     var subtitle: String
     var tracks: [Track]
+    var coverImageData: Data?
 
-    init(id: UUID = UUID(), title: String, subtitle: String, tracks: [Track]) {
+    init(
+        id: UUID = UUID(),
+        title: String,
+        subtitle: String,
+        tracks: [Track],
+        coverImageData: Data? = nil
+    ) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.tracks = tracks
+        self.coverImageData = coverImageData
     }
 }
 

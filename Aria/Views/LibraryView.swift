@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 struct LibraryView: View {
     @EnvironmentObject private var player: PlayerViewModel
@@ -474,25 +475,8 @@ private struct PlaylistRow: View {
         .padding(.vertical, 6)
     }
 
-    @ViewBuilder
     private var playlistArtwork: some View {
-        if let firstTrack = playlist.tracks.first {
-            ArtworkView(track: firstTrack, size: 76)
-        } else {
-            ZStack {
-                Color.ariaSurfaceRaised
-
-                Image(systemName: "music.note.list")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.ariaTextSecondary)
-            }
-            .frame(width: 76, height: 76)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            )
-        }
+        PlaylistArtwork(playlist: playlist, size: 76)
     }
 }
 
@@ -571,25 +555,8 @@ private struct TabletPlaylistCard: View {
         .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
     }
 
-    @ViewBuilder
     private var artwork: some View {
-        if let firstTrack = playlist.tracks.first {
-            ArtworkView(track: firstTrack, size: 152, cornerRadius: 10)
-        } else {
-            ZStack {
-                Color.ariaSurfaceRaised
-
-                Image(systemName: "music.note.list")
-                    .font(.system(size: 44, weight: .semibold))
-                    .foregroundStyle(.ariaTextSecondary)
-            }
-            .frame(width: 152, height: 152)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            )
-        }
+        PlaylistArtwork(playlist: playlist, size: 152, cornerRadius: 10)
     }
 }
 
@@ -675,6 +642,9 @@ private struct PlaylistDetailView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var isRenaming = false
     @State private var draftTitle = ""
+    @State private var selectedCoverItem: PhotosPickerItem?
+    @State private var isImportingCover = false
+    @State private var coverImportError: String?
 
     let playlist: AriaPlaylist
 
@@ -739,11 +709,30 @@ private struct PlaylistDetailView: View {
         } message: {
             Text("Choose a name for this playlist.")
         }
+        .alert(
+            "Couldn’t Update Cover",
+            isPresented: Binding(
+                get: { coverImportError != nil },
+                set: { if !$0 { coverImportError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(coverImportError ?? "Please choose another image.")
+        }
+        .onChange(of: selectedCoverItem) { _, item in
+            guard let item else { return }
+            Task { await importCover(from: item) }
+        }
     }
 
     private var playlistHeader: some View {
         VStack(spacing: 18) {
             playlistArtwork
+
+            if player.canCustomize(currentPlaylist) {
+                coverControls
+            }
 
             VStack(spacing: 7) {
                 Text("Playlist")
@@ -770,30 +759,103 @@ private struct PlaylistDetailView: View {
         UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
     }
 
-    @ViewBuilder
     private var playlistArtwork: some View {
-        if let firstTrack = currentPlaylist.tracks.first {
-            ArtworkView(track: firstTrack, size: usesTabletLayout ? 280 : 196)
-                .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 14)
-        } else {
-            ZStack {
-                Color.ariaSurfaceRaised
+        PlaylistArtwork(
+            playlist: currentPlaylist,
+            size: usesTabletLayout ? 280 : 196,
+            cornerRadius: 10
+        )
+        .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 14)
+    }
 
-                Image(systemName: "music.note.list")
-                    .font(.system(size: 54, weight: .semibold))
-                    .foregroundStyle(.ariaTextSecondary)
+    private var coverControls: some View {
+        HStack(spacing: 10) {
+            PhotosPicker(selection: $selectedCoverItem, matching: .images) {
+                HStack(spacing: 8) {
+                    if isImportingCover {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.ariaTextPrimary)
+                    } else {
+                        Image(systemName: "photo.badge.plus")
+                    }
+
+                    Text(currentPlaylist.coverImageData == nil ? "Add cover" : "Change cover")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.ariaTextPrimary)
+                .padding(.horizontal, 14)
+                .frame(height: 42)
+                .background(.white.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .frame(
-                width: usesTabletLayout ? 280 : 196,
-                height: usesTabletLayout ? 280 : 196
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 12)
+            .buttonStyle(AriaPressButtonStyle(pressedScale: 0.97))
+            .disabled(isImportingCover)
+
+            if currentPlaylist.coverImageData != nil {
+                Button(role: .destructive) {
+                    withAnimation(AriaMotion.quickSpring) {
+                        player.setCoverImageData(nil, for: currentPlaylist)
+                    }
+                } label: {
+                    Label("Remove", systemImage: "trash")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.red.opacity(0.9))
+                        .padding(.horizontal, 14)
+                        .frame(height: 42)
+                        .background(.red.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(AriaPressButtonStyle(pressedScale: 0.97))
+            }
         }
+    }
+
+    @MainActor
+    private func importCover(from item: PhotosPickerItem) async {
+        isImportingCover = true
+        defer {
+            isImportingCover = false
+            selectedCoverItem = nil
+        }
+
+        do {
+            guard let originalData = try await item.loadTransferable(type: Data.self),
+                  let coverData = compressedCoverData(from: originalData) else {
+                coverImportError = "The selected file could not be read as an image."
+                return
+            }
+
+            withAnimation(AriaMotion.quickSpring) {
+                player.setCoverImageData(coverData, for: currentPlaylist)
+            }
+        } catch {
+            coverImportError = error.localizedDescription
+        }
+    }
+
+    private func compressedCoverData(from data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+
+        let maxDimension: CGFloat = 1_200
+        let longestSide = max(image.size.width, image.size.height)
+        let scale = longestSide > maxDimension ? maxDimension / longestSide : 1
+        let targetSize = CGSize(
+            width: max(1, image.size.width * scale),
+            height: max(1, image.size.height * scale)
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        let resizedImage = renderer.image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+
+        return resizedImage.jpegData(compressionQuality: 0.84)
     }
 
     private func playPlaylist() {

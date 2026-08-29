@@ -571,28 +571,38 @@ private struct AddToPlaylistRow: View {
     }
 }
 
-private struct PlaylistArtwork: View {
+struct PlaylistArtwork: View {
     let playlist: AriaPlaylist
     var size: CGFloat
+    var cornerRadius: CGFloat = 8
 
     var body: some View {
-        if let firstTrack = playlist.tracks.first {
-            ArtworkView(track: firstTrack, size: size)
-        } else {
-            ZStack {
-                Color.ariaSurfaceRaised
+        ZStack {
+            if let coverImageData = playlist.coverImageData,
+               let coverImage = UIImage(data: coverImageData) {
+                Image(uiImage: coverImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+            } else if let firstTrack = playlist.tracks.first {
+                ArtworkView(track: firstTrack, size: size, cornerRadius: cornerRadius)
+            } else {
+                ZStack {
+                    Color.ariaSurfaceRaised
 
-                Image(systemName: "music.note.list")
-                    .font(.system(size: size * 0.32, weight: .semibold))
-                    .foregroundStyle(.ariaTextSecondary)
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: size * 0.32, weight: .semibold))
+                        .foregroundStyle(.ariaTextSecondary)
+                }
+                .frame(width: size, height: size)
             }
-            .frame(width: size, height: size)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
-            )
         }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(.white.opacity(0.1), lineWidth: 1)
+        )
     }
 }
 

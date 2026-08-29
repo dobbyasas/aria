@@ -620,6 +620,18 @@ final class PlayerViewModel: ObservableObject {
         persistPlaylists()
     }
 
+    func setCoverImageData(_ imageData: Data?, for playlist: AriaPlaylist) {
+        guard playlist.id != Self.libraryPlaylistID else { return }
+        guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
+
+        playlists[index].coverImageData = imageData
+        persistPlaylists()
+    }
+
+    func canCustomize(_ playlist: AriaPlaylist) -> Bool {
+        playlist.id != Self.libraryPlaylistID
+    }
+
     func playlist(_ playlist: AriaPlaylist, contains track: Track) -> Bool {
         playlist.tracks.contains { $0.id == track.id }
     }
