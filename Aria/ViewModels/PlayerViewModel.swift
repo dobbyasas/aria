@@ -109,6 +109,10 @@ final class PlayerViewModel: ObservableObject {
         return Array(queue[nextIndex...])
     }
 
+    var editablePlaylists: [AriaPlaylist] {
+        playlists.filter { $0.id != Self.libraryPlaylistID }
+    }
+
     var upNextPreview: [Track] {
         guard let currentTrack, let index = queue.firstIndex(of: currentTrack) else {
             return Array(queue.prefix(20))
@@ -209,6 +213,10 @@ final class PlayerViewModel: ObservableObject {
         do {
             let tracks = try await serverClient.fetchTracks()
             replaceCatalog(with: tracks)
+
+            if let serverPlaylists = try? await serverClient.fetchPlaylists() {
+                await mergeServerPlaylists(serverPlaylists, tracks: tracks)
+            }
         } catch {
             catalogErrorMessage = error.localizedDescription
         }
@@ -582,7 +590,12 @@ final class PlayerViewModel: ObservableObject {
     @discardableResult
     func createPlaylist(containing track: Track? = nil) -> AriaPlaylist {
         let playlistNumber = playlists.filter { $0.title.hasPrefix("New Playlist") }.count + 1
-        var playlist = AriaPlaylist(title: "New Playlist \(playlistNumber)", subtitle: "0 songs", tracks: [])
+        var playlist = AriaPlaylist(
+            title: "New Playlist \(playlistNumber)",
+            subtitle: "0 songs",
+            tracks: [],
+            revision: 1
+        )
 
         if let track {
             playlist.tracks.append(track)
@@ -591,33 +604,37 @@ final class PlayerViewModel: ObservableObject {
 
         playlists.insert(playlist, at: 0)
         persistPlaylists()
+        syncPlaylist(playlist)
         return playlist
     }
 
     func add(_ track: Track, to playlist: AriaPlaylist) {
+        guard playlist.id != Self.libraryPlaylistID else { return }
         guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
         guard !playlists[index].tracks.contains(where: { $0.id == track.id }) else { return }
 
         playlists[index].tracks.append(track)
         playlists[index].subtitle = subtitle(forTrackCount: playlists[index].tracks.count)
-        persistPlaylists()
+        finishPlaylistMutation(at: index)
     }
 
     func remove(_ track: Track, from playlist: AriaPlaylist) {
+        guard playlist.id != Self.libraryPlaylistID else { return }
         guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
 
         playlists[index].tracks.removeAll { $0.id == track.id }
         playlists[index].subtitle = subtitle(forTrackCount: playlists[index].tracks.count)
-        persistPlaylists()
+        finishPlaylistMutation(at: index)
     }
 
     func rename(_ playlist: AriaPlaylist, to title: String) {
+        guard playlist.id != Self.libraryPlaylistID else { return }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty else { return }
         guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
 
         playlists[index].title = trimmedTitle
-        persistPlaylists()
+        finishPlaylistMutation(at: index)
     }
 
     func setCoverImageData(_ imageData: Data?, for playlist: AriaPlaylist) {
@@ -625,7 +642,7 @@ final class PlayerViewModel: ObservableObject {
         guard let index = playlists.firstIndex(where: { $0.id == playlist.id }) else { return }
 
         playlists[index].coverImageData = imageData
-        persistPlaylists()
+        finishPlaylistMutation(at: index)
     }
 
     func canCustomize(_ playlist: AriaPlaylist) -> Bool {
@@ -644,6 +661,56 @@ final class PlayerViewModel: ObservableObject {
         playlistStore.save(
             playlists.filter { $0.id != Self.libraryPlaylistID }
         )
+    }
+
+    private func finishPlaylistMutation(at index: Int) {
+        playlists[index].revision = (playlists[index].revision ?? 0) + 1
+        let playlist = playlists[index]
+        persistPlaylists()
+        syncPlaylist(playlist)
+    }
+
+    private func syncPlaylist(_ playlist: AriaPlaylist) {
+        Task { [serverClient] in
+            _ = try? await serverClient.savePlaylist(playlist)
+        }
+    }
+
+    private func mergeServerPlaylists(
+        _ serverPlaylists: [AriaServerPlaylist],
+        tracks: [Track]
+    ) async {
+        let tracksByID = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0) })
+        let localPlaylists = playlists.filter { $0.id != Self.libraryPlaylistID }
+        let localByID = Dictionary(uniqueKeysWithValues: localPlaylists.map { ($0.id, $0) })
+        var merged: [AriaPlaylist] = []
+        var uploads: [AriaPlaylist] = []
+        var seen = Set<UUID>()
+
+        for serverPlaylist in serverPlaylists {
+            let serverModel = serverPlaylist.playlist(using: tracksByID)
+            if let local = localByID[serverPlaylist.id],
+               (local.revision ?? 0) > serverPlaylist.revision {
+                merged.append(local)
+                uploads.append(local)
+            } else {
+                merged.append(serverModel)
+            }
+            seen.insert(serverPlaylist.id)
+        }
+
+        for local in localPlaylists where seen.insert(local.id).inserted {
+            merged.append(local)
+            uploads.append(local)
+        }
+
+        let libraryPlaylist = playlists.first { $0.id == Self.libraryPlaylistID }
+        playlists = (libraryPlaylist.map { [$0] } ?? []) + merged
+        persistPlaylists()
+
+        for playlist in uploads {
+            _ = try? await serverClient.savePlaylist(playlist)
+        }
     }
 
     private func publishQueueNotice(message: String, symbolName: String) {

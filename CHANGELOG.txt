@@ -1,6 +1,18 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.5.0
+Created: 2026-08-29
+
+Added:
+- Added server-backed playlist synchronization across iPhone, iPad, and Mac.
+- Added automatic migration of existing local iPhone/iPad playlists to the shared server.
+
+Changed:
+- Synchronized playlist names, ordered songs, custom covers, and edit revisions.
+- Kept local playlist storage as an offline cache while resolving newer cross-device revisions.
+
+
 Version 1.4.0
 Created: 2026-08-29
 

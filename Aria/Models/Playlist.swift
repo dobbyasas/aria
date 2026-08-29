@@ -6,19 +6,50 @@ struct AriaPlaylist: Identifiable, Hashable, Codable {
     var subtitle: String
     var tracks: [Track]
     var coverImageData: Data?
+    var revision: Int?
 
     init(
         id: UUID = UUID(),
         title: String,
         subtitle: String,
         tracks: [Track],
-        coverImageData: Data? = nil
+        coverImageData: Data? = nil,
+        revision: Int? = nil
     ) {
         self.id = id
         self.title = title
         self.subtitle = subtitle
         self.tracks = tracks
         self.coverImageData = coverImageData
+        self.revision = revision
+    }
+}
+
+struct AriaServerPlaylist: Codable {
+    var id: UUID
+    var title: String
+    var trackIDs: [UUID]
+    var coverImageData: Data?
+    var revision: Int
+
+    init(playlist: AriaPlaylist) {
+        id = playlist.id
+        title = playlist.title
+        trackIDs = playlist.tracks.map(\.id)
+        coverImageData = playlist.coverImageData
+        revision = playlist.revision ?? 0
+    }
+
+    func playlist(using tracksByID: [UUID: Track]) -> AriaPlaylist {
+        let tracks = trackIDs.compactMap { tracksByID[$0] }
+        return AriaPlaylist(
+            id: id,
+            title: title,
+            subtitle: tracks.count == 1 ? "1 song" : "\(tracks.count) songs",
+            tracks: tracks,
+            coverImageData: coverImageData,
+            revision: revision
+        )
     }
 }
 

@@ -465,7 +465,7 @@ private struct AddToPlaylistSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         SectionTitle(title: "Playlists")
 
-                        ForEach(player.playlists) { playlist in
+                        ForEach(player.editablePlaylists) { playlist in
                             AddToPlaylistRow(track: track, playlist: playlist)
                         }
                     }
