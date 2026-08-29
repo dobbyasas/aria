@@ -90,7 +90,6 @@ struct ArtworkView: View {
 struct TrackRow: View {
     @EnvironmentObject private var player: PlayerViewModel
     @State private var isAddToPlaylistPresented = false
-    @State private var isTrackActionsPresented = false
 
     let track: Track
     var source: [Track]
@@ -104,7 +103,6 @@ struct TrackRow: View {
             .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
-            .animation(AriaMotion.fast, value: player.currentTrack?.id)
             .swipeActions(edge: .trailing, allowsFullSwipe: !usesCustomQueueSwipe) {
                 trailingSwipeActions
             }
@@ -214,7 +212,6 @@ struct TrackRow: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.ariaAccent)
                     .contentTransition(.symbolEffect(.replace))
-                    .symbolEffect(.variableColor.iterative, options: .repeating.speed(3), isActive: player.isPlaying)
             } else if !usesCustomQueueSwipe {
                 Text(track.duration.ariaClockTime)
                     .font(.caption)
@@ -226,47 +223,42 @@ struct TrackRow: View {
     }
 
     private var trackActionButton: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            isTrackActionsPresented = true
+        Menu {
+            Button {
+                playNow()
+            } label: {
+                Label("Play Now", systemImage: "play.fill")
+            }
+
+            Button {
+                player.playNext(track)
+            } label: {
+                Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+            }
+
+            Button {
+                addTrackToQueue()
+            } label: {
+                Label("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+            }
+
+            Divider()
+
+            Button {
+                isAddToPlaylistPresented = true
+            } label: {
+                Label("Add to Playlist", systemImage: "text.badge.plus")
+            }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.headline.weight(.bold))
+                .font(.body.weight(.semibold))
                 .foregroundStyle(.ariaTextSecondary)
-                .frame(width: 48, height: 48)
-                .background(.white.opacity(isTrackActionsPresented ? 0.13 : 0.055))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .frame(width: 42, height: 48)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.92))
+        .menuStyle(.button)
+        .buttonStyle(.plain)
         .accessibilityLabel("More options for \(track.title)")
-        .popover(isPresented: $isTrackActionsPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
-            TrackActionsPopover(
-                track: track,
-                playNow: {
-                    isTrackActionsPresented = false
-                    playNow()
-                },
-                playNext: {
-                    isTrackActionsPresented = false
-                    withAnimation(AriaMotion.quickSpring) {
-                        player.playNext(track)
-                    }
-                },
-                addToQueue: {
-                    isTrackActionsPresented = false
-                    addTrackToQueue()
-                },
-                addToPlaylist: {
-                    isTrackActionsPresented = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        isAddToPlaylistPresented = true
-                    }
-                }
-            )
-            .presentationCompactAdaptation(.popover)
-            .presentationBackground(Color.ariaSurfaceRaised)
-        }
     }
 
     private func handleRowTap() {
@@ -287,75 +279,6 @@ struct TrackRow: View {
         withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
             player.addToQueue(track)
         }
-    }
-}
-
-private struct TrackActionsPopover: View {
-    let track: Track
-    let playNow: () -> Void
-    let playNext: () -> Void
-    let addToQueue: () -> Void
-    let addToPlaylist: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(track.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.ariaTextSecondary)
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.bottom, 2)
-
-            actionButton(title: "Play Now", systemImage: "play.fill", action: playNow)
-            actionButton(
-                title: "Play Next",
-                systemImage: "text.line.first.and.arrowtriangle.forward",
-                action: playNext
-            )
-            actionButton(
-                title: "Add to Queue",
-                systemImage: "text.line.last.and.arrowtriangle.forward",
-                action: addToQueue
-            )
-            actionButton(
-                title: "Add to Playlist",
-                systemImage: "text.badge.plus",
-                action: addToPlaylist
-            )
-        }
-        .padding(10)
-        .frame(width: 258)
-        .background(Color.ariaSurfaceRaised)
-    }
-
-    private func actionButton(title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 13) {
-                Image(systemName: systemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.ariaAccent)
-                    .frame(width: 24)
-
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.ariaTextPrimary)
-
-                Spacer()
-            }
-            .padding(.horizontal, 13)
-            .frame(height: 54)
-        }
-        .buttonStyle(TrackActionButtonStyle())
-    }
-}
-
-private struct TrackActionButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(configuration.isPressed ? Color.ariaAccent.opacity(0.2) : .white.opacity(0.055))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(AriaMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -404,14 +327,14 @@ struct SectionTitle: View {
     var body: some View {
         HStack {
             Text(title)
-                .font(.title3.bold())
+                .font(.title3.weight(.semibold))
                 .foregroundStyle(.ariaTextPrimary)
 
             Spacer()
 
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .font(.caption.weight(.bold))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(.ariaAccent)
             }
         }
@@ -640,8 +563,6 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
-                    AddToPlaylistButton(track: track, size: 36, hasBackground: false)
-
                     Button {
                         player.playPause()
                     } label: {
@@ -667,13 +588,12 @@ struct MiniPlayerBar: View {
                 .opacity(player.progress > 0 ? 1 : 0)
                 .animation(AriaMotion.fast, value: player.progress)
             }
-            .background(.ariaSurfaceRaised)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(.white.opacity(0.08), lineWidth: 1)
             )
-            .animation(AriaMotion.fast, value: player.currentTrack?.id)
         }
     }
 }

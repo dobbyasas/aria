@@ -20,7 +20,6 @@ struct LibraryView: View {
                     librarySearchField
                     sectionContent
                         .id(selectedSection)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
 
                     if !usesTabletLayout {
                         versionFooter
@@ -31,7 +30,6 @@ struct LibraryView: View {
                 .padding(.bottom, 24)
                 .frame(maxWidth: usesTabletLayout ? 1060 : .infinity)
                 .frame(maxWidth: .infinity)
-                .animation(AriaMotion.quickSpring, value: selectedSection)
             }
             .background(Color.ariaBackground.ignoresSafeArea())
             .scrollDismissesKeyboard(.interactively)
@@ -63,7 +61,7 @@ struct LibraryView: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Library")
-                    .font(.system(size: usesTabletLayout ? 44 : 36, weight: .black, design: .rounded))
+                    .font(.system(size: usesTabletLayout ? 40 : 34, weight: .semibold))
                     .foregroundStyle(.ariaTextPrimary)
 
                 Text("Songs streamed from your Fedora server.")
@@ -76,12 +74,13 @@ struct LibraryView: View {
             Button {
                 isDownloadSheetPresented = true
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(Color.ariaBackground)
-                    .frame(width: 42, height: 42)
-                    .background(Color.ariaAccent)
-                    .clipShape(Circle())
+                Label("Add music", systemImage: "arrow.down.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ariaTextPrimary)
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+                    .background(.white.opacity(0.08))
+                    .clipShape(Capsule())
             }
             .buttonStyle(AriaPressButtonStyle(pressedScale: 0.94))
             .disabled(player.isDownloadStarting || player.downloadJob?.isActive == true)
@@ -179,7 +178,6 @@ struct LibraryView: View {
             } else {
                 ForEach(songs) { track in
                     TrackRow(track: track, source: songs)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
         }
@@ -247,7 +245,6 @@ struct LibraryView: View {
             } else {
                 ForEach(albums) { album in
                     AlbumRow(album: album)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
         }
@@ -257,22 +254,9 @@ struct LibraryView: View {
         let playlists = filteredPlaylists
 
         return LazyVStack(alignment: .leading, spacing: 12) {
-            Button {
-                withAnimation(AriaMotion.quickSpring) {
-                    _ = player.createPlaylist()
-                }
-            } label: {
-                Label("Create playlist", systemImage: "plus")
-                    .font(.headline)
-                    .foregroundStyle(.ariaBackground)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(.ariaAccent)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            SectionTitle(title: "Playlists", actionTitle: "New") {
+                _ = player.createPlaylist()
             }
-            .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
-
-            SectionTitle(title: "Playlists")
 
             if playlists.isEmpty, !playlistSearchText.isEmpty {
                 SearchEmptyState(itemName: "playlists", query: playlistSearchText)
@@ -289,7 +273,6 @@ struct LibraryView: View {
             } else {
                 ForEach(playlists) { playlist in
                     PlaylistRow(playlist: playlist)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
         }
@@ -609,7 +592,7 @@ private struct AlbumDetailView: View {
                     .foregroundStyle(.ariaAccent)
 
                 Text(album.title)
-                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(.ariaTextPrimary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
@@ -741,7 +724,7 @@ private struct PlaylistDetailView: View {
                     .foregroundStyle(.ariaAccent)
 
                 Text(currentPlaylist.title)
-                    .font(.system(size: 32, weight: .black, design: .rounded))
+                    .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(.ariaTextPrimary)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)

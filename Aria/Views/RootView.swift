@@ -30,8 +30,6 @@ struct RootView: View {
         .environmentObject(player)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
-        .animation(AriaMotion.playerSpring, value: player.isPlayerPresented)
-        .animation(AriaMotion.quickSpring, value: player.queueNotice)
     }
 
     private var usesTabletLayout: Bool {
@@ -142,14 +140,12 @@ private struct TabletRootView: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("ARIA")
-                    .font(.system(size: 30, weight: .black, design: .rounded))
-                    .tracking(1.8)
+                    .font(.system(size: 27, weight: .semibold))
                     .foregroundStyle(.ariaTextPrimary)
 
-                Text("YOUR MUSIC, EVERYWHERE")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.2)
-                    .foregroundStyle(.ariaAccent)
+                Text("Your music, everywhere")
+                    .font(.caption)
+                    .foregroundStyle(.ariaTextSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
@@ -169,9 +165,8 @@ private struct TabletRootView: View {
                 .padding(.vertical, 18)
 
             VStack(alignment: .leading, spacing: 13) {
-                Text("ON YOUR SERVER")
-                    .font(.caption2.weight(.bold))
-                    .tracking(1.1)
+                Text("On your server")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.ariaTextSecondary)
 
                 serverCount(title: "Songs", count: player.catalog.count)

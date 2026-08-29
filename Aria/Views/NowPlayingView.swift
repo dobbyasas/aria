@@ -43,7 +43,6 @@ struct NowPlayingView: View {
                 }
             }
             .simultaneousGesture(pullToLibraryGesture)
-            .animation(AriaMotion.fast, value: track.id)
             .task(id: track.id) {
                 await loadBackgroundArtwork(for: track)
             }
@@ -53,9 +52,6 @@ struct NowPlayingView: View {
     private func compactPlayerLayout(for track: Track, artworkSize: CGFloat, isTablet: Bool) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: isTablet ? 28 : 24) {
-                pullHandle
-                    .padding(.top, 10)
-
                 header(for: track)
 
                 swipeableTrackIdentity(for: track, artworkSize: artworkSize)
@@ -71,7 +67,6 @@ struct NowPlayingView: View {
             .frame(maxWidth: isTablet ? 600 : 440)
             .frame(maxWidth: .infinity)
             .offset(y: min(pullDistance * 0.18, 18))
-            .animation(.spring(response: 0.24, dampingFraction: 0.84), value: pullDistance)
         }
     }
 
@@ -101,7 +96,6 @@ struct NowPlayingView: View {
         .frame(maxWidth: 1080, maxHeight: .infinity)
         .frame(maxWidth: .infinity)
         .offset(y: min(pullDistance * 0.12, 12))
-        .animation(.spring(response: 0.24, dampingFraction: 0.84), value: pullDistance)
     }
 
     private func background(for track: Track) -> some View {
@@ -112,30 +106,39 @@ struct NowPlayingView: View {
 
             LinearGradient(
                 colors: [
-                    Color(hex: artwork.topHex).opacity(0.74),
-                    Color(hex: artwork.bottomHex).opacity(0.58),
+                    Color(hex: artwork.topHex).opacity(0.48),
+                    Color(hex: artwork.bottomHex).opacity(0.34),
                     .ariaBackground
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
 
-            Color.ariaBackground.opacity(0.22)
+            Color.ariaBackground.opacity(0.34)
         }
         .ignoresSafeArea()
-        .animation(.easeOut(duration: 0.28), value: artwork)
     }
 
     private func header(for track: Track) -> some View {
         HStack(alignment: .center) {
+            Button {
+                player.hidePlayer()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .frame(width: 40, height: 40)
+            }
+            .buttonStyle(AriaPressButtonStyle())
+            .accessibilityLabel("Close player")
+
             VStack(alignment: .leading, spacing: 4) {
-                Text("ARIA PLAYER")
-                    .font(.caption.weight(.bold))
-                    .tracking(1.4)
-                    .foregroundStyle(.ariaAccent)
+                Text("Now Playing")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.ariaTextPrimary)
 
                 Text(track.album)
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.ariaTextSecondary)
                     .lineLimit(1)
             }
@@ -149,27 +152,14 @@ struct NowPlayingView: View {
                     Image(systemName: "quote.bubble")
                         .font(.headline)
                         .foregroundStyle(.ariaTextPrimary)
-                        .frame(width: 38, height: 38)
-                        .background(.black.opacity(0.18))
-                        .clipShape(Circle())
+                        .frame(width: 40, height: 40)
                 }
                 .buttonStyle(AriaPressButtonStyle())
                 .accessibilityLabel("Show lyrics")
 
-                AddToPlaylistButton(track: track)
+                AddToPlaylistButton(track: track, size: 40, hasBackground: false)
             }
         }
-    }
-
-    private var pullHandle: some View {
-        Capsule()
-            .fill(.ariaTextPrimary.opacity(0.28))
-            .frame(width: 44, height: 5)
-            .scaleEffect(x: 1 + min(pullDistance / 220, 0.18), y: 1, anchor: .center)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-            .accessibilityLabel("Pull down to open library")
     }
 
     private var pullToLibraryGesture: some Gesture {
@@ -197,7 +187,7 @@ struct NowPlayingView: View {
     private func swipeableTrackIdentity(for track: Track, artworkSize: CGFloat) -> some View {
         VStack(spacing: 24) {
             ArtworkView(track: track, size: artworkSize, cornerRadius: 8)
-                .shadow(color: .black.opacity(0.35), radius: 24, x: 0, y: 18)
+                .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 12)
                 .id(track.id)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
 
@@ -206,7 +196,6 @@ struct NowPlayingView: View {
         .contentShape(Rectangle())
         .offset(x: clampedTrackSwipeOffset)
         .simultaneousGesture(trackNavigationGesture)
-        .animation(.spring(response: 0.24, dampingFraction: 0.84), value: trackSwipeDistance)
     }
 
     private var clampedTrackSwipeOffset: CGFloat {
@@ -268,7 +257,7 @@ struct NowPlayingView: View {
     private func songIdentity(for track: Track) -> some View {
         VStack(spacing: 8) {
             Text(track.title)
-                .font(.system(size: 30, weight: .bold, design: .rounded))
+                .font(.system(size: 29, weight: .semibold))
                 .foregroundStyle(.ariaTextPrimary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -303,7 +292,6 @@ struct NowPlayingView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.ariaTextSecondary)
-            .animation(AriaMotion.fast, value: player.elapsed)
         }
     }
 
@@ -319,7 +307,6 @@ struct NowPlayingView: View {
             }
             .buttonStyle(AriaPressButtonStyle())
             .accessibilityLabel(player.isShuffleEnabled ? "Turn shuffle off" : "Turn shuffle on")
-            .animation(AriaMotion.fast, value: player.isShuffleEnabled)
 
             Button {
                 player.previous()
@@ -338,15 +325,14 @@ struct NowPlayingView: View {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(.ariaBackground)
-                    .frame(width: 74, height: 74)
+                    .frame(width: 68, height: 68)
                     .background(.ariaTextPrimary)
                     .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.26), radius: 18, x: 0, y: 10)
+                    .shadow(color: .black.opacity(0.2), radius: 12, x: 0, y: 7)
                     .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(AriaPressButtonStyle(pressedScale: 0.92))
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-            .animation(AriaMotion.fast, value: player.isPlaying)
 
             Button {
                 player.next()
@@ -369,7 +355,6 @@ struct NowPlayingView: View {
             }
             .buttonStyle(AriaPressButtonStyle())
             .accessibilityLabel(player.repeatMode.title)
-            .animation(AriaMotion.fast, value: player.repeatMode)
         }
     }
 

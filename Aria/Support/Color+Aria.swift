@@ -28,12 +28,12 @@ extension Color {
         )
     }
 
-    static let ariaBackground = Color(hex: "#111316")
-    static let ariaSurface = Color(hex: "#1A1D21")
-    static let ariaSurfaceRaised = Color(hex: "#24282E")
-    static let ariaTextPrimary = Color(hex: "#F7F2E9")
-    static let ariaTextSecondary = Color(hex: "#AAA7A0")
-    static let ariaAccent = Color(hex: "#45D6C7")
+    static let ariaBackground = Color(hex: "#0D0F12")
+    static let ariaSurface = Color(hex: "#16191D")
+    static let ariaSurfaceRaised = Color(hex: "#20242A")
+    static let ariaTextPrimary = Color(hex: "#F5F7F8")
+    static let ariaTextSecondary = Color(hex: "#9AA1A9")
+    static let ariaAccent = Color(hex: "#42D6C5")
     static let ariaWarm = Color(hex: "#F28482")
 }
 
