@@ -128,6 +128,24 @@ struct AriaServerClient {
         throw AriaServerError.unreachable(failures)
     }
 
+    func deleteAlbum(containing track: Track) async throws -> AlbumDeletionResult {
+        var failures: [String] = []
+        for baseURL in baseURLs {
+            do {
+                let endpoint = baseURL
+                    .appendingPathComponent("api")
+                    .appendingPathComponent("tracks")
+                    .appendingPathComponent(track.id.uuidString.lowercased())
+                    .appendingPathComponent("album")
+                let data = try await sendRequest(to: endpoint, method: "DELETE")
+                return try JSONDecoder().decode(AlbumDeletionResult.self, from: data)
+            } catch {
+                failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
+            }
+        }
+        throw AriaServerError.unreachable(failures)
+    }
+
     private func sendRequest(
         to url: URL,
         method: String,
@@ -152,6 +170,10 @@ struct AriaServerClient {
         }
 
         guard 200..<300 ~= httpResponse.statusCode else {
+            if let payload = try? JSONDecoder().decode(ServerErrorPayload.self, from: data),
+               !payload.error.isEmpty {
+                throw AriaServerError.serverMessage(httpResponse.statusCode, payload.error)
+            }
             throw AriaServerError.badStatus(httpResponse.statusCode)
         }
 
@@ -206,6 +228,7 @@ struct AriaDownloadRequest: Encodable {
     var album: String
     var albumArtist: String
     var year: String
+    var kind: String = "album"
 }
 
 struct AriaDownloadJob: Decodable, Identifiable, Equatable {
@@ -217,6 +240,7 @@ struct AriaDownloadJob: Decodable, Identifiable, Equatable {
     var album: String
     var albumArtist: String
     var year: String
+    var kind: String?
     var filesStarted: Int
     var newFiles: Int?
     var error: String?
@@ -239,9 +263,20 @@ struct AriaDownloadJob: Decodable, Identifiable, Equatable {
     }
 }
 
+struct AlbumDeletionResult: Decodable {
+    var deletedFiles: Int
+    var deletedTrackIDs: [String]
+    var updatedPlaylists: Int
+}
+
+private struct ServerErrorPayload: Decodable {
+    let error: String
+}
+
 enum AriaServerError: LocalizedError {
     case invalidResponse
     case badStatus(Int)
+    case serverMessage(Int, String)
     case emptyCatalog
     case unreachable([String])
 
@@ -251,6 +286,8 @@ enum AriaServerError: LocalizedError {
             "The song server returned an invalid response."
         case .badStatus(let statusCode):
             "The song server returned HTTP \(statusCode)."
+        case .serverMessage(_, let message):
+            message
         case .emptyCatalog:
             "The song server did not find any songs."
         case .unreachable(let failures):

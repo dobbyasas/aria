@@ -1,6 +1,16 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.11.0
+Created: 2026-08-30
+
+Added:
+- Added YouTube Music search and direct downloads for individual songs and full playlists.
+- Added confirmed album deletion on both iPhone and iPad.
+
+Changed:
+- Standalone songs and playlist downloads remain in the song library without appearing as incomplete albums.
+
 Version 1.10.0
 Created: 2026-08-30
 

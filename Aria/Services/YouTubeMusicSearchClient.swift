@@ -1,5 +1,21 @@
 import Foundation
 
+enum YouTubeMusicSearchCategory: String, CaseIterable, Identifiable {
+    case albums = "Albums"
+    case songs = "Songs"
+    case playlists = "Playlists"
+
+    var id: String { rawValue }
+
+    var downloadKind: String {
+        switch self {
+        case .albums: "album"
+        case .songs: "song"
+        case .playlists: "playlist"
+        }
+    }
+}
+
 struct YouTubeMusicAlbumResult: Identifiable, Equatable {
     let id: String
     let title: String
@@ -9,6 +25,29 @@ struct YouTubeMusicAlbumResult: Identifiable, Equatable {
 
     var downloadLink: String {
         "https://music.youtube.com/browse/\(id)"
+    }
+}
+
+struct YouTubeMusicSongResult: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let artist: String
+    let artworkURL: URL?
+
+    var downloadLink: String {
+        "https://music.youtube.com/watch?v=\(id)"
+    }
+}
+
+struct YouTubeMusicPlaylistResult: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let curator: String
+    let artworkURL: URL?
+
+    var downloadLink: String {
+        let playlistID = id.hasPrefix("VL") ? String(id.dropFirst(2)) : id
+        return "https://music.youtube.com/playlist?list=\(playlistID)"
     }
 }
 
@@ -43,6 +82,35 @@ struct YouTubeMusicSearchClient {
         }
 
         return Self.parseAlbums(from: initialResponse, limit: limit)
+    }
+
+    func searchSongs(query: String, limit: Int = 60) async throws -> [YouTubeMusicSongResult] {
+        let response = try await filteredSearchResponse(query: query, chipTitle: "Songs")
+        return Self.parseSongs(from: response, limit: limit)
+    }
+
+    func searchPlaylists(query: String, limit: Int = 60) async throws -> [YouTubeMusicPlaylistResult] {
+        let response = try await filteredSearchResponse(query: query, chipTitle: "Playlists")
+        return Self.parsePlaylists(from: response, limit: limit)
+    }
+
+    private func filteredSearchResponse(query: String, chipTitle: String) async throws -> Any {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [:] }
+        let configuration = try await fetchWebConfiguration()
+        let initialResponse = try await fetchSearchResponse(
+            query: query,
+            parameters: nil,
+            configuration: configuration
+        )
+        guard let parameters = Self.searchParameters(titled: chipTitle, in: initialResponse) else {
+            return initialResponse
+        }
+        return try await fetchSearchResponse(
+            query: query,
+            parameters: parameters,
+            configuration: configuration
+        )
     }
 
     private func fetchWebConfiguration() async throws -> WebConfiguration {
@@ -153,13 +221,17 @@ struct YouTubeMusicSearchClient {
     }
 
     private static func albumSearchParameters(in value: Any) -> String? {
+        searchParameters(titled: "Albums", in: value)
+    }
+
+    private static func searchParameters(titled requestedTitle: String, in value: Any) -> String? {
         if let dictionary = value as? [String: Any] {
             if let chip = dictionary["chipCloudChipRenderer"] as? [String: Any] {
                 let title = runs(from: chip["text"])
                     .compactMap { $0["text"] as? String }
                     .joined()
 
-                if title.localizedCaseInsensitiveCompare("Albums") == .orderedSame,
+                if title.localizedCaseInsensitiveCompare(requestedTitle) == .orderedSame,
                    let navigationEndpoint = chip["navigationEndpoint"] as? [String: Any],
                    let searchEndpoint = navigationEndpoint["searchEndpoint"] as? [String: Any],
                    let parameters = searchEndpoint["params"] as? String {
@@ -168,19 +240,151 @@ struct YouTubeMusicSearchClient {
             }
 
             for child in dictionary.values {
-                if let parameters = albumSearchParameters(in: child) {
+                if let parameters = searchParameters(titled: requestedTitle, in: child) {
                     return parameters
                 }
             }
         } else if let array = value as? [Any] {
             for child in array {
-                if let parameters = albumSearchParameters(in: child) {
+                if let parameters = searchParameters(titled: requestedTitle, in: child) {
                     return parameters
                 }
             }
         }
 
         return nil
+    }
+
+    private static func parseSongs(from response: Any, limit: Int) -> [YouTubeMusicSongResult] {
+        var parsed: [YouTubeMusicSongResult] = []
+        collectSongs(in: response, into: &parsed)
+        var seen = Set<String>()
+        return parsed.filter { seen.insert($0.id).inserted }.prefix(max(limit, 0)).map { $0 }
+    }
+
+    private static func collectSongs(in value: Any, into results: inout [YouTubeMusicSongResult]) {
+        if let dictionary = value as? [String: Any] {
+            if let renderer = dictionary["musicResponsiveListItemRenderer"] as? [String: Any],
+               let song = song(from: renderer) {
+                results.append(song)
+            }
+            for child in dictionary.values {
+                collectSongs(in: child, into: &results)
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                collectSongs(in: child, into: &results)
+            }
+        }
+    }
+
+    private static func song(from renderer: [String: Any]) -> YouTubeMusicSongResult? {
+        guard let columns = renderer["flexColumns"] as? [[String: Any]], !columns.isEmpty else {
+            return nil
+        }
+        let titleContainer = (columns[0]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"]
+        let titleRuns = runs(from: titleContainer)
+        let metadata = columns.dropFirst().flatMap { column -> [String] in
+            let container = (column["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"]
+            return runs(from: container).compactMap { $0["text"] as? String }
+        }
+        let videoID = titleRuns
+            .compactMap { $0["navigationEndpoint"] as? [String: Any] }
+            .compactMap(videoID(from:))
+            .first
+            ?? videoID(from: renderer["navigationEndpoint"] as? [String: Any])
+        guard let videoID,
+              let title = titleRuns.first?["text"] as? String,
+              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        let artist = metadata.first(where: isMeaningfulCreator) ?? "Unknown Artist"
+        return YouTubeMusicSongResult(
+            id: videoID,
+            title: title,
+            artist: artist,
+            artworkURL: largestThumbnailURL(in: renderer)
+        )
+    }
+
+    private static func parsePlaylists(from response: Any, limit: Int) -> [YouTubeMusicPlaylistResult] {
+        var parsed: [YouTubeMusicPlaylistResult] = []
+        collectPlaylists(in: response, into: &parsed)
+        var seen = Set<String>()
+        return parsed.filter { seen.insert($0.id).inserted }.prefix(max(limit, 0)).map { $0 }
+    }
+
+    private static func collectPlaylists(in value: Any, into results: inout [YouTubeMusicPlaylistResult]) {
+        if let dictionary = value as? [String: Any] {
+            for key in ["musicResponsiveListItemRenderer", "musicTwoRowItemRenderer"] {
+                if let renderer = dictionary[key] as? [String: Any],
+                   let playlist = playlist(from: renderer) {
+                    results.append(playlist)
+                }
+            }
+            for child in dictionary.values {
+                collectPlaylists(in: child, into: &results)
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                collectPlaylists(in: child, into: &results)
+            }
+        }
+    }
+
+    private static func playlist(from renderer: [String: Any]) -> YouTubeMusicPlaylistResult? {
+        let columns = renderer["flexColumns"] as? [[String: Any]] ?? []
+        let responsiveTitle = columns.first.flatMap {
+            ($0["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"]
+        }
+        let titleRuns = runs(from: responsiveTitle ?? renderer["title"])
+        let metadata = columns.dropFirst().flatMap { column -> [String] in
+            let container = (column["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"]
+            return runs(from: container).compactMap { $0["text"] as? String }
+        } + runs(from: renderer["subtitle"]).compactMap { $0["text"] as? String }
+        let browseID = titleRuns
+            .compactMap { $0["navigationEndpoint"] as? [String: Any] }
+            .compactMap(playlistBrowseID(from:))
+            .first
+            ?? playlistBrowseID(from: renderer["navigationEndpoint"] as? [String: Any])
+        guard let browseID,
+              let title = titleRuns.first?["text"] as? String,
+              !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return YouTubeMusicPlaylistResult(
+            id: browseID,
+            title: title,
+            curator: metadata.first(where: isMeaningfulCreator) ?? "YouTube Music",
+            artworkURL: largestThumbnailURL(in: renderer)
+        )
+    }
+
+    private static func videoID(from endpoint: [String: Any]?) -> String? {
+        (endpoint?["watchEndpoint"] as? [String: Any])?["videoId"] as? String
+    }
+
+    private static func playlistBrowseID(from endpoint: [String: Any]?) -> String? {
+        guard let browse = endpoint?["browseEndpoint"] as? [String: Any],
+              let browseID = browse["browseId"] as? String else { return nil }
+        let supportedConfigs = browse["browseEndpointContextSupportedConfigs"] as? [String: Any]
+        let musicConfig = supportedConfigs?["browseEndpointContextMusicConfig"] as? [String: Any]
+        let pageType = musicConfig?["pageType"] as? String ?? ""
+        guard pageType == "MUSIC_PAGE_TYPE_PLAYLIST" || browseID.hasPrefix("VL") else { return nil }
+        return browseID
+    }
+
+    private static func isMeaningfulCreator(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "•" else { return false }
+        let ignored = ["Song", "Video", "Playlist", "Community playlist", "Episodes for later"]
+        if ignored.contains(where: { trimmed.localizedCaseInsensitiveCompare($0) == .orderedSame }) {
+            return false
+        }
+        if trimmed.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil {
+            return false
+        }
+        return true
     }
 
     private static func collectAlbums(in value: Any, into results: inout [YouTubeMusicAlbumResult]) {

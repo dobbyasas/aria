@@ -23,6 +23,8 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isDownloadStarting = false
     @Published private(set) var downloadErrorMessage: String?
     @Published private(set) var youtubeMusicResults: [YouTubeMusicAlbumResult] = []
+    @Published private(set) var youtubeMusicSongResults: [YouTubeMusicSongResult] = []
+    @Published private(set) var youtubeMusicPlaylistResults: [YouTubeMusicPlaylistResult] = []
     @Published private(set) var isSearchingYouTubeMusic = false
     @Published private(set) var youtubeMusicSearchError: String?
     @Published private(set) var queueNotice: QueueNotice?
@@ -154,7 +156,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private static func albums(from catalog: [Track]) -> [AriaAlbum] {
-        let groupedTracks = Dictionary(grouping: catalog) { track in
+        let groupedTracks = Dictionary(grouping: catalog.filter { $0.isStandalone != true }) { track in
             albumGroupingKey(for: track)
         }
 
@@ -224,14 +226,21 @@ final class PlayerViewModel: ObservableObject {
         isCatalogLoading = false
     }
 
-    func startDownload(link: String, album: String, albumArtist: String, year: String) async {
+    func startDownload(
+        link: String,
+        album: String,
+        albumArtist: String,
+        year: String,
+        kind: String = "album"
+    ) async {
         guard !isDownloadStarting, downloadJob?.isActive != true else { return }
 
         let request = AriaDownloadRequest(
             link: link.trimmingCharacters(in: .whitespacesAndNewlines),
             album: album.trimmingCharacters(in: .whitespacesAndNewlines),
             albumArtist: albumArtist.trimmingCharacters(in: .whitespacesAndNewlines),
-            year: year.trimmingCharacters(in: .whitespacesAndNewlines)
+            year: year.trimmingCharacters(in: .whitespacesAndNewlines),
+            kind: kind
         )
 
         isDownloadStarting = true
@@ -274,6 +283,40 @@ final class PlayerViewModel: ObservableObject {
         isSearchingYouTubeMusic = false
     }
 
+    func searchYouTubeMusic(query: String, category: YouTubeMusicSearchCategory) async {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            youtubeMusicResults = []
+            youtubeMusicSongResults = []
+            youtubeMusicPlaylistResults = []
+            youtubeMusicSearchError = nil
+            return
+        }
+
+        isSearchingYouTubeMusic = true
+        youtubeMusicSearchError = nil
+        youtubeMusicResults = []
+        youtubeMusicSongResults = []
+        youtubeMusicPlaylistResults = []
+        do {
+            switch category {
+            case .albums:
+                youtubeMusicResults = try await youtubeMusicSearchClient.searchAlbums(query: query)
+            case .songs:
+                youtubeMusicSongResults = try await youtubeMusicSearchClient.searchSongs(query: query)
+            case .playlists:
+                youtubeMusicPlaylistResults = try await youtubeMusicSearchClient.searchPlaylists(query: query)
+            }
+            let isEmpty = youtubeMusicResults.isEmpty
+                && youtubeMusicSongResults.isEmpty
+                && youtubeMusicPlaylistResults.isEmpty
+            youtubeMusicSearchError = isEmpty ? "No YouTube Music \(category.rawValue.lowercased()) matched that search." : nil
+        } catch {
+            youtubeMusicSearchError = error.localizedDescription
+        }
+        isSearchingYouTubeMusic = false
+    }
+
     func startDownload(_ result: YouTubeMusicAlbumResult) async {
         guard !isAlbumDownloaded(result) else { return }
 
@@ -283,6 +326,45 @@ final class PlayerViewModel: ObservableObject {
             albumArtist: result.artist,
             year: result.year
         )
+    }
+
+    func startDownload(_ result: YouTubeMusicSongResult) async {
+        guard !isSongDownloaded(result) else { return }
+        await startDownload(
+            link: result.downloadLink,
+            album: result.title,
+            albumArtist: result.artist,
+            year: "",
+            kind: "song"
+        )
+    }
+
+    func startDownload(_ result: YouTubeMusicPlaylistResult) async {
+        await startDownload(
+            link: result.downloadLink,
+            album: result.title,
+            albumArtist: result.curator,
+            year: "",
+            kind: "playlist"
+        )
+    }
+
+    func isSongDownloaded(_ result: YouTubeMusicSongResult) -> Bool {
+        let title = Self.normalizedWords(in: result.title).joined(separator: " ")
+        let artist = Self.canonicalArtistName(result.artist)
+        return catalog.contains { track in
+            Self.normalizedWords(in: track.title).joined(separator: " ") == title
+                && Self.canonicalArtistName(track.artist) == artist
+        }
+    }
+
+    func deleteAlbum(_ album: AriaAlbum) async throws -> AlbumDeletionResult {
+        guard let track = album.tracks.first else {
+            throw AriaServerError.invalidResponse
+        }
+        let result = try await serverClient.deleteAlbum(containing: track)
+        await refreshCatalog()
+        return result
     }
 
     func isAlbumDownloaded(_ result: YouTubeMusicAlbumResult) -> Bool {
