@@ -1354,6 +1354,18 @@ private struct MobileDownloadProgressView: View {
                     .foregroundStyle(.ariaAccent)
             }
 
+            if let reusedFiles = job.reusedFiles, reusedFiles > 0, job.isSuccessful {
+                Text("\(reusedFiles) existing song\(reusedFiles == 1 ? "" : "s") reused without downloading a duplicate.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.ariaAccent)
+            }
+
+            if let playlistTrackCount = job.playlistTrackCount, job.isSuccessful {
+                Text("Aria playlist created with \(playlistTrackCount) songs.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.ariaAccent)
+            }
+
             if let error = job.error {
                 Text(error)
                     .font(.caption)

@@ -243,6 +243,9 @@ struct AriaDownloadJob: Decodable, Identifiable, Equatable {
     var kind: String?
     var filesStarted: Int
     var newFiles: Int?
+    var reusedFiles: Int?
+    var playlistID: String?
+    var playlistTrackCount: Int?
     var error: String?
     var outputTail: [String]
 
