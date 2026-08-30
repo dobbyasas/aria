@@ -546,6 +546,10 @@ private struct TabletPlaylistCard: View {
 private struct AlbumDetailView: View {
     @EnvironmentObject private var player: PlayerViewModel
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmsAlbumDeletion = false
+    @State private var isDeletingAlbum = false
+    @State private var albumDeletionError: String?
 
     let album: AriaAlbum
 
@@ -557,6 +561,26 @@ private struct AlbumDetailView: View {
                 DetailPlayButton(title: "Play album") {
                     playAlbum()
                 }
+
+                Button(role: .destructive) {
+                    confirmsAlbumDeletion = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        if isDeletingAlbum {
+                            ProgressView()
+                        } else {
+                            Label("Delete album", systemImage: "trash")
+                                .font(.headline)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 13)
+                    .background(.red.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
+                .disabled(isDeletingAlbum)
 
                 LazyVStack(alignment: .leading, spacing: 10) {
                     SectionTitle(title: "Songs")
@@ -575,6 +599,23 @@ private struct AlbumDetailView: View {
         .background(Color.ariaBackground.ignoresSafeArea())
         .navigationTitle(album.title)
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Delete \(album.title)?", isPresented: $confirmsAlbumDeletion) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Album", role: .destructive) { deleteAlbum() }
+        } message: {
+            Text("This permanently removes all \(album.tracks.count) song files in this album from the Aria server and shared playlists.")
+        }
+        .alert(
+            "Couldn’t Delete Album",
+            isPresented: Binding(
+                get: { albumDeletionError != nil },
+                set: { if !$0 { albumDeletionError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(albumDeletionError ?? "Unknown error")
+        }
     }
 
     @ViewBuilder
@@ -616,6 +657,20 @@ private struct AlbumDetailView: View {
 
         withAnimation(AriaMotion.playerSpring) {
             player.showPlayer()
+        }
+    }
+
+    private func deleteAlbum() {
+        isDeletingAlbum = true
+        Task {
+            do {
+                _ = try await player.deleteAlbum(album)
+                isDeletingAlbum = false
+                dismiss()
+            } catch {
+                isDeletingAlbum = false
+                albumDeletionError = error.localizedDescription
+            }
         }
     }
 }
@@ -886,11 +941,12 @@ private struct MobileDownloadMusicSheet: View {
     @State private var year = ""
     @State private var youtubeMusicQuery = ""
     @State private var visibleYouTubeResultCount = 3
+    @State private var searchCategory: YouTubeMusicSearchCategory = .albums
+    @State private var manualCategory: YouTubeMusicSearchCategory = .albums
 
     private var canStartDownload: Bool {
         !trimmed(link).isEmpty
-        && !trimmed(album).isEmpty
-        && !trimmed(albumArtist).isEmpty
+        && (manualCategory != .albums || (!trimmed(album).isEmpty && !trimmed(albumArtist).isEmpty))
         && !player.isDownloadStarting
         && player.downloadJob?.isActive != true
     }
@@ -903,8 +959,15 @@ private struct MobileDownloadMusicSheet: View {
         NavigationStack {
             Form {
                 Section("Search YouTube Music") {
+                    Picker("Type", selection: $searchCategory) {
+                        ForEach(YouTubeMusicSearchCategory.allCases) { category in
+                            Text(category.rawValue).tag(category)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
                     HStack(spacing: 10) {
-                        TextField("Album or artist", text: $youtubeMusicQuery)
+                        TextField(searchPlaceholder, text: $youtubeMusicQuery)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                             .submitLabel(.search)
@@ -931,19 +994,17 @@ private struct MobileDownloadMusicSheet: View {
                             .foregroundStyle(.orange)
                     }
 
-                    ForEach(Array(player.youtubeMusicResults.prefix(visibleYouTubeResultCount))) { result in
-                        MobileYouTubeMusicAlbumResultRow(result: result)
-                    }
+                    searchResults
 
-                    if visibleYouTubeResultCount < player.youtubeMusicResults.count {
+                    if visibleYouTubeResultCount < resultCount {
                         Button {
                             visibleYouTubeResultCount = min(
                                 visibleYouTubeResultCount + 3,
-                                player.youtubeMusicResults.count
+                                resultCount
                             )
                         } label: {
                             HStack {
-                                Text("Showing \(visibleYouTubeResultCount) of \(player.youtubeMusicResults.count)")
+                                Text("Showing \(visibleYouTubeResultCount) of \(resultCount)")
                                     .font(.caption)
                                     .foregroundStyle(.ariaTextSecondary)
 
@@ -957,14 +1018,22 @@ private struct MobileDownloadMusicSheet: View {
                 }
 
                 Section("Add Link Manually") {
-                    TextField("Playlist / album link", text: $link)
+                    Picker("Download as", selection: $manualCategory) {
+                        ForEach(YouTubeMusicSearchCategory.allCases) { category in
+                            Text(category.rawValue).tag(category)
+                        }
+                    }
+
+                    TextField("YouTube Music link", text: $link)
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
 
-                    TextField("Album name", text: $album)
-                    TextField("Album artist", text: $albumArtist)
-                    TextField("Year", text: $year)
-                        .keyboardType(.numberPad)
+                    if manualCategory == .albums {
+                        TextField("Album name", text: $album)
+                        TextField("Album artist", text: $albumArtist)
+                        TextField("Year", text: $year)
+                            .keyboardType(.numberPad)
+                    }
                 }
 
                 if let downloadJob = player.downloadJob {
@@ -985,9 +1054,10 @@ private struct MobileDownloadMusicSheet: View {
                         Task {
                             await player.startDownload(
                                 link: link,
-                                album: album,
-                                albumArtist: albumArtist,
-                                year: year
+                                album: manualCategory == .albums ? album : String(manualCategory.rawValue.dropLast()),
+                                albumArtist: manualCategory == .albums ? albumArtist : "YouTube Music",
+                                year: year,
+                                kind: manualCategory.downloadKind
                             )
                         }
                     } label: {
@@ -1040,7 +1110,41 @@ private struct MobileDownloadMusicSheet: View {
         visibleYouTubeResultCount = 3
 
         Task {
-            await player.searchYouTubeMusicAlbums(query: query)
+            await player.searchYouTubeMusic(query: query, category: searchCategory)
+        }
+    }
+
+    private var resultCount: Int {
+        switch searchCategory {
+        case .albums: player.youtubeMusicResults.count
+        case .songs: player.youtubeMusicSongResults.count
+        case .playlists: player.youtubeMusicPlaylistResults.count
+        }
+    }
+
+    private var searchPlaceholder: String {
+        switch searchCategory {
+        case .albums: "Album or artist"
+        case .songs: "Song or artist"
+        case .playlists: "Playlist name"
+        }
+    }
+
+    @ViewBuilder
+    private var searchResults: some View {
+        switch searchCategory {
+        case .albums:
+            ForEach(Array(player.youtubeMusicResults.prefix(visibleYouTubeResultCount))) { result in
+                MobileYouTubeMusicAlbumResultRow(result: result)
+            }
+        case .songs:
+            ForEach(Array(player.youtubeMusicSongResults.prefix(visibleYouTubeResultCount))) { result in
+                MobileYouTubeMusicSongResultRow(result: result)
+            }
+        case .playlists:
+            ForEach(Array(player.youtubeMusicPlaylistResults.prefix(visibleYouTubeResultCount))) { result in
+                MobileYouTubeMusicPlaylistResultRow(result: result)
+            }
         }
     }
 }
@@ -1127,6 +1231,94 @@ private struct MobileYouTubeMusicAlbumResultRow: View {
     }
 }
 
+private struct MobileYouTubeMusicSongResultRow: View {
+    @EnvironmentObject private var player: PlayerViewModel
+    let result: YouTubeMusicSongResult
+
+    var body: some View {
+        MobileYouTubeMusicDownloadResultRow(
+            title: result.title,
+            subtitle: result.artist,
+            artworkURL: result.artworkURL,
+            isDownloaded: player.isSongDownloaded(result)
+        ) {
+            Task { await player.startDownload(result) }
+        }
+    }
+}
+
+private struct MobileYouTubeMusicPlaylistResultRow: View {
+    @EnvironmentObject private var player: PlayerViewModel
+    let result: YouTubeMusicPlaylistResult
+
+    var body: some View {
+        MobileYouTubeMusicDownloadResultRow(
+            title: result.title,
+            subtitle: "Playlist • \(result.curator)",
+            artworkURL: result.artworkURL,
+            isDownloaded: false
+        ) {
+            Task { await player.startDownload(result) }
+        }
+    }
+}
+
+private struct MobileYouTubeMusicDownloadResultRow: View {
+    @EnvironmentObject private var player: PlayerViewModel
+    let title: String
+    let subtitle: String
+    let artworkURL: URL?
+    let isDownloaded: Bool
+    let onDownload: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: artworkURL) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
+                } else if case .empty = phase {
+                    ProgressView()
+                } else {
+                    Image(systemName: "music.note")
+                        .foregroundStyle(.ariaTextSecondary)
+                }
+            }
+            .frame(width: 54, height: 54)
+            .background(.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .lineLimit(2)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.ariaTextSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            if isDownloaded {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(.ariaAccent)
+                    .accessibilityLabel("Downloaded")
+            } else if player.isDownloadStarting || player.downloadJob?.isActive == true {
+                ProgressView().tint(.ariaAccent)
+            } else {
+                Button(action: onDownload) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.ariaAccent)
+                .accessibilityLabel("Download \(title)")
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
 private struct MobileDownloadProgressView: View {
     let job: AriaDownloadJob
 
@@ -1158,6 +1350,18 @@ private struct MobileDownloadProgressView: View {
 
             if let newFiles = job.newFiles, job.isSuccessful {
                 Text("\(newFiles) new song\(newFiles == 1 ? "" : "s") added.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.ariaAccent)
+            }
+
+            if let reusedFiles = job.reusedFiles, reusedFiles > 0, job.isSuccessful {
+                Text("\(reusedFiles) existing song\(reusedFiles == 1 ? "" : "s") reused without downloading a duplicate.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.ariaAccent)
+            }
+
+            if let playlistTrackCount = job.playlistTrackCount, job.isSuccessful {
+                Text("Aria playlist created with \(playlistTrackCount) songs.")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.ariaAccent)
             }

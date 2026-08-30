@@ -12,6 +12,7 @@ struct Track: Identifiable, Hashable, Codable {
     var streamURL: URL?
     var artworkURL: URL?
     var isExplicit: Bool
+    var isStandalone: Bool?
 
     init(
         id: UUID = UUID(),
@@ -24,7 +25,8 @@ struct Track: Identifiable, Hashable, Codable {
         artwork: ArtworkPalette,
         streamURL: URL? = nil,
         artworkURL: URL? = nil,
-        isExplicit: Bool = false
+        isExplicit: Bool = false,
+        isStandalone: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -37,6 +39,7 @@ struct Track: Identifiable, Hashable, Codable {
         self.streamURL = streamURL
         self.artworkURL = artworkURL
         self.isExplicit = isExplicit
+        self.isStandalone = isStandalone
     }
 }
 
