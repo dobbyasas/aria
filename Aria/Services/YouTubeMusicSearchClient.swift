@@ -16,7 +16,7 @@ enum YouTubeMusicSearchCategory: String, CaseIterable, Identifiable {
     }
 }
 
-struct ArtistSelection: Identifiable, Equatable {
+struct ArtistSelection: Identifiable, Hashable {
     let name: String
 
     var id: String {
@@ -165,23 +165,68 @@ struct YouTubeMusicSearchClient {
             artists = Self.parseArtists(from: artistResponse)
         }
 
-        let albumResponse: Any
-        if let albumParameters = Self.albumSearchParameters(in: initialResponse) {
-            albumResponse = try await fetchSearchResponse(
-                query: query,
-                parameters: albumParameters,
-                configuration: configuration
+        let selectedArtist = artists.first {
+            Self.normalizedArtistName($0.name) == requestedName
+        } ?? artists.first
+
+        async let artistArtworkURL = fetchArtistArtworkURL(
+            for: selectedArtist,
+            configuration: configuration
+        )
+        async let albumResponse = fetchAlbumResponse(
+            query: query,
+            initialResponse: initialResponse,
+            configuration: configuration
+        )
+
+        let resolvedArtworkURL = await artistArtworkURL
+        let resolvedAlbumResponse = try await albumResponse
+        let resolvedArtist = selectedArtist.map {
+            YouTubeMusicArtistResult(
+                id: $0.id,
+                name: $0.name,
+                artworkURL: resolvedArtworkURL ?? Self.highResolutionArtistArtworkURL(from: $0.artworkURL)
             )
-        } else {
-            albumResponse = initialResponse
         }
 
         let result = YouTubeMusicArtistPageResult(
-            artist: artists.first { Self.normalizedArtistName($0.name) == requestedName } ?? artists.first,
-            albums: Self.parseAlbums(from: albumResponse, limit: albumLimit)
+            artist: resolvedArtist,
+            albums: Self.parseAlbums(from: resolvedAlbumResponse, limit: albumLimit)
         )
         Self.artistPageCache.setObject(ArtistPageCacheEntry(result: result), forKey: cacheKey)
         return result
+    }
+
+    private func fetchAlbumResponse(
+        query: String,
+        initialResponse: Any,
+        configuration: WebConfiguration
+    ) async throws -> Any {
+        guard let parameters = Self.albumSearchParameters(in: initialResponse) else {
+            return initialResponse
+        }
+        return try await fetchSearchResponse(
+            query: query,
+            parameters: parameters,
+            configuration: configuration
+        )
+    }
+
+    private func fetchArtistArtworkURL(
+        for artist: YouTubeMusicArtistResult?,
+        configuration: WebConfiguration
+    ) async -> URL? {
+        guard let artist else { return nil }
+        do {
+            let response = try await fetchBrowseResponse(
+                browseID: artist.id,
+                configuration: configuration
+            )
+            return Self.artistHeaderArtworkURL(in: response)
+                ?? Self.highResolutionArtistArtworkURL(from: artist.artworkURL)
+        } catch {
+            return Self.highResolutionArtistArtworkURL(from: artist.artworkURL)
+        }
     }
 
     private func filteredSearchResponse(query: String, chipTitle: String) async throws -> Any {
@@ -273,6 +318,50 @@ struct YouTubeMusicSearchClient {
         let (data, response) = try await URLSession.shared.data(for: request)
         try Self.validate(response)
 
+        do {
+            return try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw YouTubeMusicSearchError.invalidResponse
+        }
+    }
+
+    private func fetchBrowseResponse(
+        browseID: String,
+        configuration: WebConfiguration
+    ) async throws -> Any {
+        var components = URLComponents(string: "https://music.youtube.com/youtubei/v1/browse")
+        components?.queryItems = [
+            URLQueryItem(name: "prettyPrint", value: "false"),
+            URLQueryItem(name: "key", value: configuration.apiKey)
+        ]
+        guard let url = components?.url else {
+            throw YouTubeMusicSearchError.invalidResponse
+        }
+
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": configuration.clientVersion,
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "browseId": browseID
+        ]
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 18
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.consentCookie, forHTTPHeaderField: "Cookie")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validate(response)
         do {
             return try JSONSerialization.jsonObject(with: data)
         } catch {
@@ -696,6 +785,45 @@ struct YouTubeMusicSearchClient {
         guard let candidate = candidates.max(by: { $0.area < $1.area }) else { return nil }
         let absolute = candidate.url.hasPrefix("//") ? "https:\(candidate.url)" : candidate.url
         return URL(string: absolute)
+    }
+
+    private static func artistHeaderArtworkURL(in value: Any) -> URL? {
+        if let dictionary = value as? [String: Any] {
+            for key in ["musicImmersiveHeaderRenderer", "musicVisualHeaderRenderer"] {
+                if let renderer = dictionary[key] as? [String: Any],
+                   let url = largestThumbnailURL(in: renderer) {
+                    return highResolutionArtistArtworkURL(from: url)
+                }
+            }
+            for child in dictionary.values {
+                if let url = artistHeaderArtworkURL(in: child) {
+                    return url
+                }
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                if let url = artistHeaderArtworkURL(in: child) {
+                    return url
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func highResolutionArtistArtworkURL(from url: URL?) -> URL? {
+        guard let url else { return nil }
+        var value = url.absoluteString
+        value = value.replacingOccurrences(
+            of: "=w[0-9]+-h[0-9]+",
+            with: "=w1600-h900",
+            options: .regularExpression
+        )
+        value = value.replacingOccurrences(
+            of: "=s[0-9]+",
+            with: "=s1600",
+            options: .regularExpression
+        )
+        return URL(string: value)
     }
 
     private static func collectThumbnails(

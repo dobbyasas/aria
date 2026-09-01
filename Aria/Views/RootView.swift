@@ -9,13 +9,6 @@ struct RootView: View {
         ZStack {
             if usesTabletLayout {
                 TabletRootView()
-            } else if let artist = player.presentedArtist {
-                NavigationStack {
-                    ArtistPageView(artistName: artist.name) {
-                        player.dismissArtist()
-                    }
-                }
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 phoneRoot
             }
@@ -56,7 +49,7 @@ struct RootView: View {
                     }
                 }
 
-            if player.isPlayerPresented {
+            if player.isPlayerPresented && player.presentedArtist == nil {
                 NowPlayingView()
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(1)
@@ -102,12 +95,8 @@ private struct TabletRootView: View {
                 .navigationSplitViewColumnWidth(min: 250, ideal: 286, max: 330)
         } detail: {
             Group {
-                if let artist = player.presentedArtist {
-                    NavigationStack {
-                        ArtistPageView(artistName: artist.name) {
-                            player.dismissArtist()
-                        }
-                    }
+                if player.presentedArtist != nil {
+                    LibraryView()
                 } else {
                     switch selection {
                     case .library:

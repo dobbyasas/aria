@@ -36,6 +36,9 @@ struct LibraryView: View {
             .navigationDestination(for: LibraryRoute.self) { route in
                 destination(for: route)
             }
+            .navigationDestination(item: $player.presentedArtist) { artist in
+                ArtistPageView(artistName: artist.name)
+            }
         }
         .background(Color.ariaBackground.ignoresSafeArea())
         .sheet(isPresented: $isDownloadSheetPresented) {
@@ -373,7 +376,6 @@ struct ArtistPageView: View {
     @State private var loadError: String?
 
     let artistName: String
-    let onBack: () -> Void
     private let searchClient = YouTubeMusicSearchClient()
 
     private var downloadedSongs: [Track] {
@@ -392,51 +394,45 @@ struct ArtistPageView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 28) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 artistHeader
 
-                if !downloadedAlbums.isEmpty {
-                    downloadedAlbumsSection
-                }
+                LazyVStack(alignment: .leading, spacing: 28) {
+                    if !downloadedAlbums.isEmpty {
+                        downloadedAlbumsSection
+                    }
 
-                availableAlbumsSection
+                    availableAlbumsSection
 
-                if !downloadedSongs.isEmpty {
-                    downloadedSongsSection
+                    if !downloadedSongs.isEmpty {
+                        downloadedSongsSection
+                    }
                 }
+                .padding(.horizontal, usesTabletLayout ? 36 : 20)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
+                .frame(maxWidth: 920)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 40)
-            .frame(maxWidth: 920)
             .frame(maxWidth: .infinity)
         }
         .background(Color.ariaBackground.ignoresSafeArea())
-        .navigationTitle("Artist")
+        .navigationTitle(artistProfile?.name ?? artistName)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: onBack) {
-                    Label("Back", systemImage: "chevron.left")
-                }
-                .font(.subheadline.weight(.semibold))
-            }
-        }
         .task(id: artistName) {
             await loadArtist()
         }
     }
 
     private var artistHeader: some View {
-        VStack(spacing: 16) {
+        ZStack(alignment: .bottomLeading) {
             AsyncImage(url: artistProfile?.artworkURL) { phase in
                 switch phase {
                 case .success(let image):
                     image.resizable().scaledToFill()
                 case .empty:
                     if showsSkeleton {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(.white.opacity(0.09))
+                        Color.white.opacity(0.09)
                     } else {
                         artistPlaceholder
                     }
@@ -446,27 +442,45 @@ struct ArtistPageView: View {
                     artistPlaceholder
                 }
             }
-            .frame(maxWidth: usesTabletLayout ? 520 : .infinity)
-            .aspectRatio(4 / 3, contentMode: .fit)
-            .background(.white.opacity(0.06))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            .frame(maxWidth: .infinity)
+            .frame(height: heroHeight)
+            .clipped()
+
+            LinearGradient(
+                stops: [
+                    .init(color: .black.opacity(0.05), location: 0),
+                    .init(color: .black.opacity(0.12), location: 0.42),
+                    .init(color: Color.ariaBackground.opacity(0.76), location: 0.78),
+                    .init(color: Color.ariaBackground, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
             )
-            .shadow(color: .black.opacity(0.3), radius: 22, x: 0, y: 12)
 
-            Text(artistProfile?.name ?? artistName)
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(.ariaTextPrimary)
-                .multilineTextAlignment(.center)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("ARTIST")
+                    .font(.caption.weight(.bold))
+                    .tracking(1.4)
+                    .foregroundStyle(.ariaAccent)
 
-            Text("\(songCountText(downloadedSongs.count)) in your library • \(downloadedAlbums.count) downloaded \(downloadedAlbums.count == 1 ? "album" : "albums")")
-                .font(.subheadline)
-                .foregroundStyle(.ariaTextSecondary)
-                .multilineTextAlignment(.center)
+                Text(artistProfile?.name ?? artistName)
+                    .font(.system(size: usesTabletLayout ? 48 : 38, weight: .bold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .lineLimit(2)
+
+                Text("\(songCountText(downloadedSongs.count)) in your library • \(downloadedAlbums.count) downloaded \(downloadedAlbums.count == 1 ? "album" : "albums")")
+                    .font(.subheadline)
+                    .foregroundStyle(.ariaTextSecondary)
+            }
+            .padding(.horizontal, usesTabletLayout ? 36 : 20)
+            .padding(.bottom, 28)
+            .frame(maxWidth: 920, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
+        .frame(height: heroHeight)
+        .background(Color.ariaSurface)
+        .clipped()
     }
 
     private var downloadedAlbumsSection: some View {
@@ -548,15 +562,20 @@ struct ArtistPageView: View {
     }
 
     private var artistPlaceholder: some View {
-        Image(systemName: "person.fill")
-            .resizable()
-            .scaledToFit()
-            .padding(72)
-            .foregroundStyle(.ariaTextSecondary)
+        ZStack {
+            Color.ariaSurface
+            Image(systemName: "person.fill")
+                .font(.system(size: usesTabletLayout ? 100 : 76, weight: .medium))
+                .foregroundStyle(.ariaTextSecondary.opacity(0.7))
+        }
     }
 
     private var usesTabletLayout: Bool {
         UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
+    private var heroHeight: CGFloat {
+        usesTabletLayout ? 470 : 360
     }
 
     private var albumSkeleton: some View {

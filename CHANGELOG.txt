@@ -1,6 +1,15 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.14.2
+Created: 2026-09-01
+
+Changed:
+- Artist artwork now fills a wide background hero and loads a high-resolution YouTube Music header image.
+
+Fixed:
+- Artist pages now use the library's native navigation stack, restoring the back button and swipe-back gesture.
+
 Version 1.14.1
 Created: 2026-09-01
 
