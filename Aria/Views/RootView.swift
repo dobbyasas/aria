@@ -30,6 +30,9 @@ struct RootView: View {
         .environmentObject(player)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
+        .task {
+            await ProvisioningExpiryMonitor.shared.configureNotifications()
+        }
     }
 
     private var usesTabletLayout: Bool {

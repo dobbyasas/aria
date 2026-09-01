@@ -23,6 +23,7 @@
 		4A0001162C00000000000001 /* AriaArtworkCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002172C00000000000001 /* AriaArtworkCache.swift */; };
 		4A0001172C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4A0002182C00000000000001 /* Assets.xcassets */; };
 		4A0001182C00000000000001 /* YouTubeMusicSearchClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */; };
+		4A0001192C00000000000001 /* ProvisioningExpiryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002202C00000000000001 /* ProvisioningExpiryMonitor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +45,7 @@
 		4A0002172C00000000000001 /* AriaArtworkCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaArtworkCache.swift; sourceTree = "<group>"; };
 		4A0002182C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeMusicSearchClient.swift; sourceTree = "<group>"; };
+		4A0002202C00000000000001 /* ProvisioningExpiryMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvisioningExpiryMonitor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +114,7 @@
 				4A0002152C00000000000001 /* AriaServerClient.swift */,
 				4A0002172C00000000000001 /* AriaArtworkCache.swift */,
 				4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */,
+				4A0002202C00000000000001 /* ProvisioningExpiryMonitor.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -221,6 +224,7 @@
 				4A0001152C00000000000001 /* AriaServerClient.swift in Sources */,
 				4A0001162C00000000000001 /* AriaArtworkCache.swift in Sources */,
 				4A0001182C00000000000001 /* YouTubeMusicSearchClient.swift in Sources */,
+				4A0001192C00000000000001 /* ProvisioningExpiryMonitor.swift in Sources */,
 				4A0001052C00000000000001 /* PlayerViewModel.swift in Sources */,
 				4A0001062C00000000000001 /* Color+Aria.swift in Sources */,
 				4A0001072C00000000000001 /* TimeFormatting.swift in Sources */,
@@ -368,7 +372,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.14.4;
+				MARKETING_VERSION = 1.15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tofi.aria;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -398,7 +402,7 @@
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.14.4;
+				MARKETING_VERSION = 1.15.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tofi.aria;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
