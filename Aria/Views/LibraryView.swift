@@ -374,6 +374,8 @@ struct ArtistPageView: View {
     @State private var isLoading = true
     @State private var showsSkeleton = false
     @State private var loadError: String?
+    @State private var artistArtwork: UIImage?
+    @State private var visibleAlbumCount = 16
 
     let artistName: String
     private let searchClient = YouTubeMusicSearchClient()
@@ -422,23 +424,23 @@ struct ArtistPageView: View {
         .task(id: artistName) {
             await loadArtist()
         }
+        .task(id: artistProfile?.artworkURL) {
+            artistArtwork = nil
+            guard let url = artistProfile?.artworkURL else { return }
+            artistArtwork = await AriaArtworkCache.shared.image(for: url)
+        }
     }
 
     private var artistHeader: some View {
         ZStack(alignment: .bottomLeading) {
-            AsyncImage(url: artistProfile?.artworkURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFill()
-                case .empty:
-                    if showsSkeleton {
-                        Color.white.opacity(0.09)
-                    } else {
-                        artistPlaceholder
-                    }
-                case .failure:
-                    artistPlaceholder
-                @unknown default:
+            Group {
+                if let artistArtwork {
+                    Image(uiImage: artistArtwork)
+                        .resizable()
+                        .scaledToFill()
+                } else if showsSkeleton || artistProfile?.artworkURL != nil {
+                    Color.white.opacity(0.09)
+                } else {
                     artistPlaceholder
                 }
             }
@@ -484,7 +486,7 @@ struct ArtistPageView: View {
     }
 
     private var downloadedAlbumsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "Downloaded Albums")
 
             ForEach(downloadedAlbums) { album in
@@ -519,17 +521,19 @@ struct ArtistPageView: View {
     }
 
     private var downloadedSongsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let songs = downloadedSongs
+        return LazyVStack(alignment: .leading, spacing: 10) {
             SectionTitle(title: "Downloaded Songs")
-            ForEach(downloadedSongs) { track in
-                TrackRow(track: track, source: downloadedSongs)
+            ForEach(songs) { track in
+                TrackRow(track: track, source: songs)
             }
         }
     }
 
     @ViewBuilder
     private var availableAlbumsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let albums = downloadableAlbums
+        LazyVStack(alignment: .leading, spacing: 12) {
             SectionTitle(title: "More Albums")
 
             if isLoading {
@@ -549,13 +553,23 @@ struct ArtistPageView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(.ariaAccent)
                 }
-            } else if downloadableAlbums.isEmpty {
+            } else if albums.isEmpty {
                 Text("No additional albums were found.")
                     .font(.subheadline)
                     .foregroundStyle(.ariaTextSecondary)
             } else {
-                ForEach(downloadableAlbums) { result in
+                ForEach(albums.prefix(visibleAlbumCount)) { result in
                     MobileYouTubeMusicAlbumResultRow(result: result)
+                }
+
+                if visibleAlbumCount < albums.count {
+                    ProgressView()
+                        .tint(.ariaAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .onAppear {
+                            visibleAlbumCount = min(visibleAlbumCount + 16, albums.count)
+                        }
                 }
             }
         }
@@ -604,6 +618,7 @@ struct ArtistPageView: View {
     private func loadArtist() async {
         isLoading = true
         showsSkeleton = false
+        visibleAlbumCount = 16
         loadError = nil
         let skeletonTask = Task {
             try? await Task.sleep(for: .milliseconds(250))

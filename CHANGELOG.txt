@@ -1,6 +1,14 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.14.3
+Created: 2026-09-01
+
+Changed:
+- Artist metadata and artwork are now cached across visits, while YouTube Music setup is warmed during app startup.
+- Duplicate and hover-prefetched artist requests now share one network operation.
+- Artist songs and albums render lazily in batches without repeatedly filtering and sorting the same collections.
+
 Version 1.14.2
 Created: 2026-09-01
 

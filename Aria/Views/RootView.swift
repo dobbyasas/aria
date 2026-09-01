@@ -30,7 +30,6 @@ struct RootView: View {
         .environmentObject(player)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
-        .animation(AriaMotion.playerSpring, value: player.presentedArtist)
     }
 
     private var usesTabletLayout: Bool {
@@ -106,7 +105,6 @@ private struct TabletRootView: View {
                     }
                 }
             }
-            .id(player.presentedArtist?.id ?? selection.id)
             .transition(.opacity)
             .animation(AriaMotion.fast, value: selection)
         }

@@ -24,18 +24,18 @@ struct ArtistSelection: Identifiable, Hashable {
     }
 }
 
-struct YouTubeMusicArtistResult: Identifiable, Equatable {
+struct YouTubeMusicArtistResult: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let artworkURL: URL?
 }
 
-struct YouTubeMusicArtistPageResult: Equatable {
+struct YouTubeMusicArtistPageResult: Equatable, Codable {
     let artist: YouTubeMusicArtistResult?
     let albums: [YouTubeMusicAlbumResult]
 }
 
-struct YouTubeMusicAlbumResult: Identifiable, Equatable {
+struct YouTubeMusicAlbumResult: Identifiable, Equatable, Codable {
     let id: String
     let title: String
     let artist: String
@@ -71,9 +71,56 @@ struct YouTubeMusicPlaylistResult: Identifiable, Equatable {
 }
 
 struct YouTubeMusicSearchClient {
-    private struct WebConfiguration {
+    private struct WebConfiguration: Sendable {
         let apiKey: String
         let clientVersion: String
+    }
+
+    private actor ArtistPageRequestCoordinator {
+        private var tasks: [String: Task<YouTubeMusicArtistPageResult, Error>] = [:]
+
+        func result(
+            for key: String,
+            operation: @escaping @Sendable () async throws -> YouTubeMusicArtistPageResult
+        ) async throws -> YouTubeMusicArtistPageResult {
+            if let task = tasks[key] {
+                return try await task.value
+            }
+
+            let task = Task(operation: operation)
+            tasks[key] = task
+            do {
+                let result = try await task.value
+                tasks[key] = nil
+                return result
+            } catch {
+                tasks[key] = nil
+                throw error
+            }
+        }
+    }
+
+    private actor WebConfigurationRequestCoordinator {
+        private var task: Task<WebConfiguration, Error>?
+
+        func configuration(
+            operation: @escaping @Sendable () async throws -> WebConfiguration
+        ) async throws -> WebConfiguration {
+            if let task {
+                return try await task.value
+            }
+
+            let newTask = Task(operation: operation)
+            task = newTask
+            do {
+                let configuration = try await newTask.value
+                task = nil
+                return configuration
+            } catch {
+                task = nil
+                throw error
+            }
+        }
     }
 
     private final class ArtistPageCacheEntry {
@@ -85,11 +132,38 @@ struct YouTubeMusicSearchClient {
         }
     }
 
+    private final class WebConfigurationCacheEntry {
+        let configuration: WebConfiguration
+        let createdAt = Date()
+
+        init(configuration: WebConfiguration) {
+            self.configuration = configuration
+        }
+    }
+
+    private struct PersistedArtistPage: Codable {
+        let result: YouTubeMusicArtistPageResult
+        let createdAt: Date
+    }
+
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     private static let consentCookie = "SOCS=CAI; CONSENT=YES+cb.20210328-17-p0.en+FX+917"
     private static let artistPageCache = NSCache<NSString, ArtistPageCacheEntry>()
-    private static let artistPageCacheLifetime: TimeInterval = 60 * 60
+    private static let artistPageCoordinator = ArtistPageRequestCoordinator()
+    private static let webConfigurationCoordinator = WebConfigurationRequestCoordinator()
+    private static let webConfigurationCache = NSCache<NSString, WebConfigurationCacheEntry>()
+    private static let artistPageCacheLifetime: TimeInterval = 24 * 60 * 60
+    private static let webConfigurationCacheLifetime: TimeInterval = 60 * 60
+    private static let persistedArtistPagePrefix = "aria.youtube-music.artist-page."
+
+    func prepare() async {
+        _ = try? await fetchWebConfiguration()
+    }
+
+    func prefetchArtistPage(named name: String) async {
+        _ = try? await artistPage(named: name)
+    }
 
     func searchAlbums(query: String, limit: Int = 60) async throws -> [YouTubeMusicAlbumResult] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -140,12 +214,30 @@ struct YouTubeMusicSearchClient {
             return YouTubeMusicArtistPageResult(artist: nil, albums: [])
         }
 
-        let cacheKey = Self.normalizedArtistName(query) as NSString
-        if let cached = Self.artistPageCache.object(forKey: cacheKey),
+        let normalizedName = Self.normalizedArtistName(query)
+        let cacheKey = "\(normalizedName)|\(albumLimit)"
+        if let cached = Self.artistPageCache.object(forKey: cacheKey as NSString),
            Date().timeIntervalSince(cached.createdAt) < Self.artistPageCacheLifetime {
             return cached.result
         }
 
+        if let persisted = Self.persistedArtistPage(for: cacheKey) {
+            Self.artistPageCache.setObject(ArtistPageCacheEntry(result: persisted), forKey: cacheKey as NSString)
+            return persisted
+        }
+
+        return try await Self.artistPageCoordinator.result(for: cacheKey) {
+            let result = try await loadArtistPage(query: query, albumLimit: albumLimit)
+            Self.artistPageCache.setObject(ArtistPageCacheEntry(result: result), forKey: cacheKey as NSString)
+            Self.persist(result, for: cacheKey)
+            return result
+        }
+    }
+
+    private func loadArtistPage(
+        query: String,
+        albumLimit: Int
+    ) async throws -> YouTubeMusicArtistPageResult {
         let configuration = try await fetchWebConfiguration()
         let initialResponse = try await fetchSearchResponse(
             query: query,
@@ -193,7 +285,6 @@ struct YouTubeMusicSearchClient {
             artist: resolvedArtist,
             albums: Self.parseAlbums(from: resolvedAlbumResponse, limit: albumLimit)
         )
-        Self.artistPageCache.setObject(ArtistPageCacheEntry(result: result), forKey: cacheKey)
         return result
     }
 
@@ -249,6 +340,23 @@ struct YouTubeMusicSearchClient {
     }
 
     private func fetchWebConfiguration() async throws -> WebConfiguration {
+        let cacheKey = "web-remix"
+        if let cached = Self.webConfigurationCache.object(forKey: cacheKey as NSString),
+           Date().timeIntervalSince(cached.createdAt) < Self.webConfigurationCacheLifetime {
+            return cached.configuration
+        }
+
+        return try await Self.webConfigurationCoordinator.configuration {
+            let configuration = try await Self.downloadWebConfiguration()
+            Self.webConfigurationCache.setObject(
+                WebConfigurationCacheEntry(configuration: configuration),
+                forKey: cacheKey as NSString
+            )
+            return configuration
+        }
+    }
+
+    private static func downloadWebConfiguration() async throws -> WebConfiguration {
         guard let url = URL(string: "https://music.youtube.com/?cbrd=1") else {
             throw YouTubeMusicSearchError.invalidResponse
         }
@@ -776,6 +884,28 @@ struct YouTubeMusicSearchClient {
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+    }
+
+    private static func persistedArtistPage(for key: String) -> YouTubeMusicArtistPageResult? {
+        guard
+            let data = UserDefaults.standard.data(forKey: persistedArtistPageKey(for: key)),
+            let entry = try? JSONDecoder().decode(PersistedArtistPage.self, from: data),
+            Date().timeIntervalSince(entry.createdAt) < artistPageCacheLifetime
+        else {
+            return nil
+        }
+        return entry.result
+    }
+
+    private static func persist(_ result: YouTubeMusicArtistPageResult, for key: String) {
+        let entry = PersistedArtistPage(result: result, createdAt: Date())
+        guard let data = try? JSONEncoder().encode(entry) else { return }
+        UserDefaults.standard.set(data, forKey: persistedArtistPageKey(for: key))
+    }
+
+    private static func persistedArtistPageKey(for key: String) -> String {
+        let encoded = Data(key.utf8).base64EncodedString()
+        return persistedArtistPagePrefix + encoded
     }
 
     private static func largestThumbnailURL(in value: Any) -> URL? {

@@ -22,6 +22,7 @@ struct AriaPressButtonStyle: ButtonStyle {
 struct ArtistNameLink: View {
     @EnvironmentObject private var player: PlayerViewModel
     @State private var isHovering = false
+    @State private var prefetchTask: Task<Void, Never>?
 
     let name: String
 
@@ -38,7 +39,19 @@ struct ArtistNameLink: View {
             .accessibilityAction {
                 player.presentArtist(named: name)
             }
-            .onHover { isHovering = $0 }
+            .onHover { hovering in
+                isHovering = hovering
+                prefetchTask?.cancel()
+                guard hovering else { return }
+                prefetchTask = Task {
+                    try? await Task.sleep(for: .milliseconds(180))
+                    guard !Task.isCancelled else { return }
+                    await YouTubeMusicSearchClient().prefetchArtistPage(named: name)
+                }
+            }
+            .onDisappear {
+                prefetchTask?.cancel()
+            }
             .animation(AriaMotion.fast, value: isHovering)
     }
 }

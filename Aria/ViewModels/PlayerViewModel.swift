@@ -80,6 +80,10 @@ final class PlayerViewModel: ObservableObject {
         configureRemoteCommands()
         updateNowPlayingInfo()
 
+        Task {
+            await youtubeMusicSearchClient.prepare()
+        }
+
         if automaticallyLoadsCatalog {
             catalogTask = Task { [weak self] in
                 await self?.refreshCatalog()
