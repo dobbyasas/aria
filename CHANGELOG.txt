@@ -1,6 +1,13 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.13.0
+Created: 2026-09-01
+
+Changed:
+- Playlist and individual-song downloads now preserve and repair each song's own metadata and artwork through the server.
+- Standalone downloads remain available in Songs while staying excluded from Albums.
+
 Version 1.12.1
 Created: 2026-08-30
 
