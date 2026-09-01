@@ -108,7 +108,11 @@ struct AriaAlbum: Identifiable, Hashable {
     var tracks: [Track]
 
     var id: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        serverID ?? title.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+    }
+
+    var serverID: String? {
+        tracks.compactMap(\.serverAlbumID).first
     }
 
     var artworkTrack: Track? {

@@ -128,15 +128,23 @@ struct AriaServerClient {
         throw AriaServerError.unreachable(failures)
     }
 
-    func deleteAlbum(containing track: Track) async throws -> AlbumDeletionResult {
+    func deleteAlbum(id albumID: String?, containing track: Track) async throws -> AlbumDeletionResult {
         var failures: [String] = []
         for baseURL in baseURLs {
             do {
-                let endpoint = baseURL
-                    .appendingPathComponent("api")
-                    .appendingPathComponent("tracks")
-                    .appendingPathComponent(track.id.uuidString.lowercased())
-                    .appendingPathComponent("album")
+                let endpoint: URL
+                if let albumID, !albumID.isEmpty {
+                    endpoint = baseURL
+                        .appendingPathComponent("api")
+                        .appendingPathComponent("albums")
+                        .appendingPathComponent(albumID)
+                } else {
+                    endpoint = baseURL
+                        .appendingPathComponent("api")
+                        .appendingPathComponent("tracks")
+                        .appendingPathComponent(track.id.uuidString.lowercased())
+                        .appendingPathComponent("album")
+                }
                 let data = try await sendRequest(to: endpoint, method: "DELETE")
                 return try JSONDecoder().decode(AlbumDeletionResult.self, from: data)
             } catch {

@@ -2,6 +2,7 @@ import Foundation
 
 struct Track: Identifiable, Hashable, Codable {
     let id: UUID
+    var serverAlbumID: String?
     var title: String
     var artist: String
     var album: String
@@ -14,8 +15,25 @@ struct Track: Identifiable, Hashable, Codable {
     var isExplicit: Bool
     var isStandalone: Bool?
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case serverAlbumID = "albumID"
+        case title
+        case artist
+        case album
+        case duration
+        case year
+        case trackNumber
+        case artwork
+        case streamURL
+        case artworkURL
+        case isExplicit
+        case isStandalone
+    }
+
     init(
         id: UUID = UUID(),
+        serverAlbumID: String? = nil,
         title: String,
         artist: String,
         album: String,
@@ -29,6 +47,7 @@ struct Track: Identifiable, Hashable, Codable {
         isStandalone: Bool = false
     ) {
         self.id = id
+        self.serverAlbumID = serverAlbumID
         self.title = title
         self.artist = artist
         self.album = album
