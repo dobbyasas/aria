@@ -365,6 +365,10 @@ final class PlayerViewModel: ObservableObject {
         presentedArtist = ArtistSelection(name: name)
     }
 
+    func dismissArtist() {
+        presentedArtist = nil
+    }
+
     func songs(byArtist name: String) -> [Track] {
         let artist = Self.canonicalArtistName(name)
         return catalog

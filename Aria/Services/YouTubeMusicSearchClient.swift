@@ -30,6 +30,11 @@ struct YouTubeMusicArtistResult: Identifiable, Equatable {
     let artworkURL: URL?
 }
 
+struct YouTubeMusicArtistPageResult: Equatable {
+    let artist: YouTubeMusicArtistResult?
+    let albums: [YouTubeMusicAlbumResult]
+}
+
 struct YouTubeMusicAlbumResult: Identifiable, Equatable {
     let id: String
     let title: String
@@ -71,9 +76,20 @@ struct YouTubeMusicSearchClient {
         let clientVersion: String
     }
 
+    private final class ArtistPageCacheEntry {
+        let result: YouTubeMusicArtistPageResult
+        let createdAt = Date()
+
+        init(result: YouTubeMusicArtistPageResult) {
+            self.result = result
+        }
+    }
+
     private static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         + "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     private static let consentCookie = "SOCS=CAI; CONSENT=YES+cb.20210328-17-p0.en+FX+917"
+    private static let artistPageCache = NSCache<NSString, ArtistPageCacheEntry>()
+    private static let artistPageCacheLifetime: TimeInterval = 60 * 60
 
     func searchAlbums(query: String, limit: Int = 60) async throws -> [YouTubeMusicAlbumResult] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,6 +132,56 @@ struct YouTubeMusicSearchClient {
         let requestedName = Self.normalizedArtistName(query)
         return artists.first { Self.normalizedArtistName($0.name) == requestedName }
             ?? artists.first
+    }
+
+    func artistPage(named name: String, albumLimit: Int = 60) async throws -> YouTubeMusicArtistPageResult {
+        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return YouTubeMusicArtistPageResult(artist: nil, albums: [])
+        }
+
+        let cacheKey = Self.normalizedArtistName(query) as NSString
+        if let cached = Self.artistPageCache.object(forKey: cacheKey),
+           Date().timeIntervalSince(cached.createdAt) < Self.artistPageCacheLifetime {
+            return cached.result
+        }
+
+        let configuration = try await fetchWebConfiguration()
+        let initialResponse = try await fetchSearchResponse(
+            query: query,
+            parameters: nil,
+            configuration: configuration
+        )
+        let requestedName = Self.normalizedArtistName(query)
+        var artists = Self.parseArtists(from: initialResponse)
+
+        if !artists.contains(where: { Self.normalizedArtistName($0.name) == requestedName }),
+           let artistParameters = Self.searchParameters(titled: "Artists", in: initialResponse) {
+            let artistResponse = try await fetchSearchResponse(
+                query: query,
+                parameters: artistParameters,
+                configuration: configuration
+            )
+            artists = Self.parseArtists(from: artistResponse)
+        }
+
+        let albumResponse: Any
+        if let albumParameters = Self.albumSearchParameters(in: initialResponse) {
+            albumResponse = try await fetchSearchResponse(
+                query: query,
+                parameters: albumParameters,
+                configuration: configuration
+            )
+        } else {
+            albumResponse = initialResponse
+        }
+
+        let result = YouTubeMusicArtistPageResult(
+            artist: artists.first { Self.normalizedArtistName($0.name) == requestedName } ?? artists.first,
+            albums: Self.parseAlbums(from: albumResponse, limit: albumLimit)
+        )
+        Self.artistPageCache.setObject(ArtistPageCacheEntry(result: result), forKey: cacheKey)
+        return result
     }
 
     private func filteredSearchResponse(query: String, chipTitle: String) async throws -> Any {

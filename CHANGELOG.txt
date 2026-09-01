@@ -1,6 +1,15 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.14.1
+Created: 2026-09-01
+
+Changed:
+- Artist pages now open as full in-app destinations instead of modal sheets.
+- Artist artwork is larger and rectangular, with downloaded and downloadable albums shown before songs.
+- Artist data is consolidated and cached for faster repeat visits, with delayed skeletons for slower loads.
+- Clickable artist names now highlight with the accent color on pointer hover.
+
 Version 1.14.0
 Created: 2026-09-01
 

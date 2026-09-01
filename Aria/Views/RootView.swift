@@ -9,6 +9,13 @@ struct RootView: View {
         ZStack {
             if usesTabletLayout {
                 TabletRootView()
+            } else if let artist = player.presentedArtist {
+                NavigationStack {
+                    ArtistPageView(artistName: artist.name) {
+                        player.dismissArtist()
+                    }
+                }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 phoneRoot
             }
@@ -30,13 +37,7 @@ struct RootView: View {
         .environmentObject(player)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
-        .sheet(item: $player.presentedArtist) { artist in
-            NavigationStack {
-                ArtistPageView(artistName: artist.name)
-                    .environmentObject(player)
-            }
-            .presentationBackground(Color.ariaBackground)
-        }
+        .animation(AriaMotion.playerSpring, value: player.presentedArtist)
     }
 
     private var usesTabletLayout: Bool {
@@ -101,14 +102,22 @@ private struct TabletRootView: View {
                 .navigationSplitViewColumnWidth(min: 250, ideal: 286, max: 330)
         } detail: {
             Group {
-                switch selection {
-                case .library:
-                    LibraryView()
-                case .nowPlaying:
-                    NowPlayingView()
+                if let artist = player.presentedArtist {
+                    NavigationStack {
+                        ArtistPageView(artistName: artist.name) {
+                            player.dismissArtist()
+                        }
+                    }
+                } else {
+                    switch selection {
+                    case .library:
+                        LibraryView()
+                    case .nowPlaying:
+                        NowPlayingView()
+                    }
                 }
             }
-            .id(selection)
+            .id(player.presentedArtist?.id ?? selection.id)
             .transition(.opacity)
             .animation(AriaMotion.fast, value: selection)
         }

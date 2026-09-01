@@ -365,13 +365,15 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
 
 struct ArtistPageView: View {
     @EnvironmentObject private var player: PlayerViewModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var artistProfile: YouTubeMusicArtistResult?
     @State private var availableAlbums: [YouTubeMusicAlbumResult] = []
     @State private var isLoading = true
+    @State private var showsSkeleton = false
     @State private var loadError: String?
 
     let artistName: String
+    let onBack: () -> Void
     private let searchClient = YouTubeMusicSearchClient()
 
     private var downloadedSongs: [Track] {
@@ -397,11 +399,11 @@ struct ArtistPageView: View {
                     downloadedAlbumsSection
                 }
 
+                availableAlbumsSection
+
                 if !downloadedSongs.isEmpty {
                     downloadedSongsSection
                 }
-
-                availableAlbumsSection
             }
             .padding(.horizontal, 20)
             .padding(.top, 24)
@@ -413,9 +415,11 @@ struct ArtistPageView: View {
         .navigationTitle("Artist")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button("Done") { dismiss() }
-                    .font(.subheadline.weight(.semibold))
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: onBack) {
+                    Label("Back", systemImage: "chevron.left")
+                }
+                .font(.subheadline.weight(.semibold))
             }
         }
         .task(id: artistName) {
@@ -430,8 +434,9 @@ struct ArtistPageView: View {
                 case .success(let image):
                     image.resizable().scaledToFill()
                 case .empty:
-                    if artistProfile == nil && isLoading {
-                        ProgressView().tint(.ariaAccent)
+                    if showsSkeleton {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(.white.opacity(0.09))
                     } else {
                         artistPlaceholder
                     }
@@ -441,10 +446,14 @@ struct ArtistPageView: View {
                     artistPlaceholder
                 }
             }
-            .frame(width: 184, height: 184)
+            .frame(maxWidth: usesTabletLayout ? 520 : .infinity)
+            .aspectRatio(4 / 3, contentMode: .fit)
             .background(.white.opacity(0.06))
-            .clipShape(Circle())
-            .overlay(Circle().stroke(.white.opacity(0.12), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            )
             .shadow(color: .black.opacity(0.3), radius: 22, x: 0, y: 12)
 
             Text(artistProfile?.name ?? artistName)
@@ -510,13 +519,11 @@ struct ArtistPageView: View {
             SectionTitle(title: "More Albums")
 
             if isLoading {
-                HStack(spacing: 10) {
+                if showsSkeleton {
+                    albumSkeleton
+                } else {
                     ProgressView().tint(.ariaAccent)
-                    Text("Finding albums on YouTube Music…")
-                        .font(.subheadline)
-                        .foregroundStyle(.ariaTextSecondary)
                 }
-                .padding(.vertical, 8)
             } else if let loadError {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(loadError)
@@ -541,26 +548,58 @@ struct ArtistPageView: View {
     }
 
     private var artistPlaceholder: some View {
-        Image(systemName: "person.crop.circle.fill")
+        Image(systemName: "person.fill")
             .resizable()
             .scaledToFit()
-            .padding(34)
+            .padding(72)
             .foregroundStyle(.ariaTextSecondary)
+    }
+
+    private var usesTabletLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
+    private var albumSkeleton: some View {
+        VStack(spacing: 10) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 7)
+                        .fill(.white.opacity(0.09))
+                        .frame(width: 54, height: 54)
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.white.opacity(0.1))
+                            .frame(height: 13)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.white.opacity(0.07))
+                            .frame(width: 140, height: 10)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 3)
+            }
+        }
+        .accessibilityLabel("Loading albums")
     }
 
     private func loadArtist() async {
         isLoading = true
+        showsSkeleton = false
         loadError = nil
-
-        async let profileRequest = searchClient.searchArtist(named: artistName)
-        async let albumsRequest = searchClient.searchAlbums(query: artistName, limit: 60)
-
-        artistProfile = try? await profileRequest
+        let skeletonTask = Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            showsSkeleton = true
+        }
         do {
-            availableAlbums = try await albumsRequest
+            let result = try await searchClient.artistPage(named: artistName, albumLimit: 60)
+            artistProfile = result.artist
+            availableAlbums = result.albums
         } catch {
             loadError = error.localizedDescription
         }
+        skeletonTask.cancel()
+        showsSkeleton = false
         isLoading = false
     }
 }

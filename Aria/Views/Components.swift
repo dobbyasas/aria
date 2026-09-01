@@ -21,11 +21,13 @@ struct AriaPressButtonStyle: ButtonStyle {
 
 struct ArtistNameLink: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @State private var isHovering = false
 
     let name: String
 
     var body: some View {
         Text(name)
+            .foregroundStyle(isHovering ? Color.ariaAccent : Color.ariaTextSecondary)
             .contentShape(Rectangle())
             .highPriorityGesture(
                 TapGesture().onEnded {
@@ -36,6 +38,8 @@ struct ArtistNameLink: View {
             .accessibilityAction {
                 player.presentArtist(named: name)
             }
+            .onHover { isHovering = $0 }
+            .animation(AriaMotion.fast, value: isHovering)
     }
 }
 
