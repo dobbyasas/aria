@@ -30,6 +30,13 @@ struct RootView: View {
         .environmentObject(player)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
+        .sheet(item: $player.presentedArtist) { artist in
+            NavigationStack {
+                ArtistPageView(artistName: artist.name)
+                    .environmentObject(player)
+            }
+            .presentationBackground(Color.ariaBackground)
+        }
     }
 
     private var usesTabletLayout: Bool {

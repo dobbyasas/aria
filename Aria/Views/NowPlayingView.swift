@@ -263,7 +263,7 @@ struct NowPlayingView: View {
                 .lineLimit(2)
                 .contentTransition(.opacity)
 
-            Text(track.artist)
+            ArtistNameLink(name: track.artist)
                 .font(.title3.weight(.medium))
                 .foregroundStyle(.ariaTextSecondary)
                 .lineLimit(1)
@@ -479,7 +479,7 @@ private struct LyricsSheet: View {
                         Text(track.title)
                             .font(.caption.weight(.semibold))
                             .lineLimit(1)
-                        Text(track.artist)
+                        ArtistNameLink(name: track.artist)
                             .font(.caption2)
                             .foregroundStyle(.ariaTextSecondary)
                             .lineLimit(1)

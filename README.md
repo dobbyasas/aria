@@ -2,6 +2,8 @@
 
 Aria is a native universal SwiftUI music player for iPhone and iPad. It includes queue controls, shuffle/repeat, saved songs, progress seeking, volume, search, and a responsive library/player shell.
 
+Artist names open dedicated pages with a YouTube Music portrait, downloaded songs and albums, and additional albums that can be sent to the Aria download server.
+
 On iPad, Aria uses a persistent navigation sidebar with library counts and a mini-player, adaptive album and playlist grids, spacious detail screens, and a two-column Now Playing layout with the queue alongside the main controls. Narrow iPad multitasking automatically falls back to the compact iPhone layout.
 
 The app now loads its catalog from the Fedora song server and streams each song with `AVPlayer`.

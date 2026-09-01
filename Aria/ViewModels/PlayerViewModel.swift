@@ -27,6 +27,7 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var youtubeMusicPlaylistResults: [YouTubeMusicPlaylistResult] = []
     @Published private(set) var isSearchingYouTubeMusic = false
     @Published private(set) var youtubeMusicSearchError: String?
+    @Published var presentedArtist: ArtistSelection?
     @Published private(set) var queueNotice: QueueNotice?
     @Published var currentTrack: Track?
     @Published var elapsed: TimeInterval = 0
@@ -356,6 +357,31 @@ final class PlayerViewModel: ObservableObject {
             Self.normalizedWords(in: track.title).joined(separator: " ") == title
                 && Self.canonicalArtistName(track.artist) == artist
         }
+    }
+
+    func presentArtist(named name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        presentedArtist = ArtistSelection(name: name)
+    }
+
+    func songs(byArtist name: String) -> [Track] {
+        let artist = Self.canonicalArtistName(name)
+        return catalog
+            .filter { Self.canonicalArtistName($0.artist) == artist }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    func albums(byArtist name: String) -> [AriaAlbum] {
+        let artist = Self.canonicalArtistName(name)
+        return albums.filter { album in
+            Self.canonicalArtistName(album.artist) == artist
+                || album.tracks.contains { Self.canonicalArtistName($0.artist) == artist }
+        }
+    }
+
+    func albumResult(_ result: YouTubeMusicAlbumResult, belongsToArtist name: String) -> Bool {
+        Self.canonicalArtistName(result.artist) == Self.canonicalArtistName(name)
     }
 
     func deleteAlbum(_ album: AriaAlbum) async throws -> AlbumDeletionResult {

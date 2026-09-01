@@ -1,6 +1,13 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.14.0
+Created: 2026-09-01
+
+Added:
+- Added artist pages with YouTube Music portraits, downloaded songs and albums, and additional albums available to download.
+- Artist names throughout the library, album views, player, mini-player, queue, lyrics, and download results now open their artist page.
+
 Version 1.13.2
 Created: 2026-09-01
 

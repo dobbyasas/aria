@@ -16,6 +16,20 @@ enum YouTubeMusicSearchCategory: String, CaseIterable, Identifiable {
     }
 }
 
+struct ArtistSelection: Identifiable, Equatable {
+    let name: String
+
+    var id: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+    }
+}
+
+struct YouTubeMusicArtistResult: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let artworkURL: URL?
+}
+
 struct YouTubeMusicAlbumResult: Identifiable, Equatable {
     let id: String
     let title: String
@@ -92,6 +106,16 @@ struct YouTubeMusicSearchClient {
     func searchPlaylists(query: String, limit: Int = 60) async throws -> [YouTubeMusicPlaylistResult] {
         let response = try await filteredSearchResponse(query: query, chipTitle: "Playlists")
         return Self.parsePlaylists(from: response, limit: limit)
+    }
+
+    func searchArtist(named name: String) async throws -> YouTubeMusicArtistResult? {
+        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return nil }
+        let response = try await filteredSearchResponse(query: query, chipTitle: "Artists")
+        let artists = Self.parseArtists(from: response)
+        let requestedName = Self.normalizedArtistName(query)
+        return artists.first { Self.normalizedArtistName($0.name) == requestedName }
+            ?? artists.first
     }
 
     private func filteredSearchResponse(query: String, chipTitle: String) async throws -> Any {
@@ -218,6 +242,57 @@ struct YouTubeMusicSearchClient {
             .filter { seen.insert($0.id).inserted }
             .prefix(max(limit, 0))
             .map { $0 }
+    }
+
+    private static func parseArtists(from response: Any) -> [YouTubeMusicArtistResult] {
+        var parsed: [YouTubeMusicArtistResult] = []
+        collectArtists(in: response, into: &parsed)
+        var seen = Set<String>()
+        return parsed.filter { seen.insert($0.id).inserted }
+    }
+
+    private static func collectArtists(in value: Any, into results: inout [YouTubeMusicArtistResult]) {
+        if let dictionary = value as? [String: Any] {
+            for key in ["musicResponsiveListItemRenderer", "musicTwoRowItemRenderer", "musicCardShelfRenderer"] {
+                if let renderer = dictionary[key] as? [String: Any],
+                   let artist = artist(from: renderer) {
+                    results.append(artist)
+                }
+            }
+            for child in dictionary.values {
+                collectArtists(in: child, into: &results)
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                collectArtists(in: child, into: &results)
+            }
+        }
+    }
+
+    private static func artist(from renderer: [String: Any]) -> YouTubeMusicArtistResult? {
+        let columns = renderer["flexColumns"] as? [[String: Any]] ?? []
+        let responsiveTitle = columns.first.flatMap {
+            ($0["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"]
+        }
+        let titleRuns = runs(from: responsiveTitle ?? renderer["title"])
+        let browseID = titleRuns
+            .compactMap { $0["navigationEndpoint"] as? [String: Any] }
+            .compactMap(artistBrowseID(from:))
+            .first
+            ?? artistBrowseID(from: renderer["navigationEndpoint"] as? [String: Any])
+            ?? artistBrowseID(from: renderer["onTap"] as? [String: Any])
+
+        guard let browseID,
+              let name = titleRuns.first?["text"] as? String,
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        return YouTubeMusicArtistResult(
+            id: browseID,
+            name: name,
+            artworkURL: largestThumbnailURL(in: renderer)
+        )
     }
 
     private static func albumSearchParameters(in value: Any) -> String? {
@@ -526,6 +601,26 @@ struct YouTubeMusicSearchClient {
         }
 
         return browseID
+    }
+
+    private static func artistBrowseID(from endpoint: [String: Any]?) -> String? {
+        guard let browse = endpoint?["browseEndpoint"] as? [String: Any],
+              let browseID = browse["browseId"] as? String else { return nil }
+        let supportedConfigs = browse["browseEndpointContextSupportedConfigs"] as? [String: Any]
+        let musicConfig = supportedConfigs?["browseEndpointContextMusicConfig"] as? [String: Any]
+        let pageType = musicConfig?["pageType"] as? String ?? ""
+        guard pageType == "MUSIC_PAGE_TYPE_ARTIST" || browseID.hasPrefix("UC") else { return nil }
+        return browseID
+    }
+
+    private static func normalizedArtistName(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: " - Topic", with: "", options: .caseInsensitive)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private static func largestThumbnailURL(in value: Any) -> URL? {

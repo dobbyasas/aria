@@ -19,6 +19,26 @@ struct AriaPressButtonStyle: ButtonStyle {
     }
 }
 
+struct ArtistNameLink: View {
+    @EnvironmentObject private var player: PlayerViewModel
+
+    let name: String
+
+    var body: some View {
+        Text(name)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                TapGesture().onEnded {
+                    player.presentArtist(named: name)
+                }
+            )
+            .accessibilityAddTraits(.isLink)
+            .accessibilityAction {
+                player.presentArtist(named: name)
+            }
+    }
+}
+
 struct ArtworkView: View {
     @State private var cachedArtwork: UIImage?
 
@@ -199,7 +219,12 @@ struct TrackRow: View {
                     }
                 }
 
-                Text(showAlbum ? "\(track.artist) • \(track.album)" : track.artist)
+                HStack(spacing: 0) {
+                    ArtistNameLink(name: track.artist)
+                    if showAlbum {
+                        Text(" • \(track.album)")
+                    }
+                }
                     .foregroundStyle(.ariaTextSecondary)
                     .font(.subheadline)
                     .lineLimit(1)
@@ -295,7 +320,7 @@ private struct QueueDragPreview: View {
                     .foregroundStyle(.ariaTextPrimary)
                     .lineLimit(1)
 
-                Text(track.artist)
+                ArtistNameLink(name: track.artist)
                     .font(.caption)
                     .foregroundStyle(.ariaTextSecondary)
                     .lineLimit(1)
@@ -422,7 +447,7 @@ private struct AddToPlaylistSheet: View {
                     .foregroundStyle(.ariaTextPrimary)
                     .lineLimit(1)
 
-                Text(track.artist)
+                ArtistNameLink(name: track.artist)
                     .font(.subheadline)
                     .foregroundStyle(.ariaTextSecondary)
                     .lineLimit(1)
@@ -551,7 +576,7 @@ struct MiniPlayerBar: View {
                                     .lineLimit(1)
                                     .contentTransition(.opacity)
 
-                                Text(track.artist)
+                                ArtistNameLink(name: track.artist)
                                     .font(.caption)
                                     .foregroundStyle(.ariaTextSecondary)
                                     .lineLimit(1)
