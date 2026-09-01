@@ -419,8 +419,10 @@ struct ArtistPageView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Color.ariaBackground.ignoresSafeArea())
-        .navigationTitle(artistProfile?.name ?? artistName)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .task(id: artistName) {
             await loadArtist()
         }
@@ -450,7 +452,8 @@ struct ArtistPageView: View {
 
             LinearGradient(
                 stops: [
-                    .init(color: .black.opacity(0.05), location: 0),
+                    .init(color: .black.opacity(0.34), location: 0),
+                    .init(color: .black.opacity(0.06), location: 0.24),
                     .init(color: .black.opacity(0.12), location: 0.42),
                     .init(color: Color.ariaBackground.opacity(0.76), location: 0.78),
                     .init(color: Color.ariaBackground, location: 1)
