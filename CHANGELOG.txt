@@ -1,6 +1,12 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.13.1
+Created: 2026-09-01
+
+Fixed:
+- Advanced the shared release with server cleanup for obsolete placeholder playlist duplicates.
+
 Version 1.13.0
 Created: 2026-09-01
 
