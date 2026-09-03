@@ -28,13 +28,16 @@ extension Color {
         )
     }
 
-    static let ariaBackground = Color(hex: "#0D0F12")
-    static let ariaSurface = Color(hex: "#16191D")
-    static let ariaSurfaceRaised = Color(hex: "#20242A")
-    static let ariaTextPrimary = Color(hex: "#F5F7F8")
-    static let ariaTextSecondary = Color(hex: "#9AA1A9")
-    static let ariaAccent = Color(hex: "#42D6C5")
-    static let ariaWarm = Color(hex: "#F28482")
+    static let ariaBackground = Color(hex: "#11110F")
+    static let ariaSurface = Color(hex: "#1A1916")
+    static let ariaSurfaceRaised = Color(hex: "#24221E")
+    static let ariaTextPrimary = Color(hex: "#F3F0E8")
+    static let ariaTextSecondary = Color(hex: "#A8A39A")
+    static let ariaAccent = Color(hex: "#FF6B4A")
+    static let ariaWarm = Color(hex: "#DFA45A")
+    static let ariaViolet = Color(hex: "#8E829D")
+    static let ariaCyan = Color(hex: "#7A9E9F")
+    static let ariaDivider = Color.white.opacity(0.09)
 }
 
 extension ShapeStyle where Self == Color {
@@ -45,4 +48,7 @@ extension ShapeStyle where Self == Color {
     static var ariaTextSecondary: Color { Color.ariaTextSecondary }
     static var ariaAccent: Color { Color.ariaAccent }
     static var ariaWarm: Color { Color.ariaWarm }
+    static var ariaViolet: Color { Color.ariaViolet }
+    static var ariaCyan: Color { Color.ariaCyan }
+    static var ariaDivider: Color { Color.ariaDivider }
 }

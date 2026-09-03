@@ -10,29 +10,40 @@ struct LibraryView: View {
     @State private var albumSearchText = ""
     @State private var playlistSearchText = ""
     @State private var isDownloadSheetPresented = false
+    @Namespace private var sectionIndicator
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    header
-                    sectionPicker
-                    librarySearchField
-                    sectionContent
-                        .id(selectedSection)
+            ZStack {
+                libraryBackdrop
 
-                    if !usesTabletLayout {
-                        versionFooter
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 28) {
+                        header
+                        radioHero
+                        sectionPicker
+                        librarySearchField
+                        sectionContent
+                            .id(selectedSection)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                                    removal: .move(edge: .leading).combined(with: .opacity)
+                                )
+                            )
+
+                        if !usesTabletLayout {
+                            versionFooter
+                        }
                     }
+                    .padding(.horizontal, usesTabletLayout ? 36 : 18)
+                    .padding(.top, usesTabletLayout ? 32 : 18)
+                    .padding(.bottom, 28)
+                    .frame(maxWidth: usesTabletLayout ? 1060 : .infinity)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, usesTabletLayout ? 36 : 20)
-                .padding(.top, usesTabletLayout ? 34 : 24)
-                .padding(.bottom, 24)
-                .frame(maxWidth: usesTabletLayout ? 1060 : .infinity)
-                .frame(maxWidth: .infinity)
+                .scrollDismissesKeyboard(.interactively)
             }
-            .background(Color.ariaBackground.ignoresSafeArea())
-            .scrollDismissesKeyboard(.interactively)
             .navigationDestination(for: LibraryRoute.self) { route in
                 destination(for: route)
             }
@@ -45,6 +56,10 @@ struct LibraryView: View {
             MobileDownloadMusicSheet()
                 .environmentObject(player)
         }
+    }
+
+    private var libraryBackdrop: some View {
+        Color.ariaBackground.ignoresSafeArea()
     }
 
     private var usesTabletLayout: Bool {
@@ -61,13 +76,13 @@ struct LibraryView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Library")
-                    .font(.system(size: usesTabletLayout ? 40 : 34, weight: .semibold))
+                    .font(.system(size: usesTabletLayout ? 44 : 36, weight: .bold, design: .default))
                     .foregroundStyle(.ariaTextPrimary)
 
-                Text("Songs streamed from your Fedora server.")
+                Text("\(player.catalog.count) songs  ·  \(player.albums.count) albums")
                     .font(.subheadline)
                     .foregroundStyle(.ariaTextSecondary)
             }
@@ -78,12 +93,11 @@ struct LibraryView: View {
                 isDownloadSheetPresented = true
             } label: {
                 Label("Add music", systemImage: "arrow.down.circle")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.ariaTextPrimary)
-                    .padding(.horizontal, 12)
-                    .frame(height: 38)
-                    .background(.white.opacity(0.08))
-                    .clipShape(Capsule())
+                    .labelStyle(.iconOnly)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .frame(width: 44, height: 44)
+                    .background(Color.ariaSurfaceRaised, in: Circle())
             }
             .buttonStyle(AriaPressButtonStyle(pressedScale: 0.94))
             .disabled(player.isDownloadStarting || player.downloadJob?.isActive == true)
@@ -92,13 +106,102 @@ struct LibraryView: View {
         }
     }
 
-    private var sectionPicker: some View {
-        Picker("Library section", selection: $selectedSection) {
-            ForEach(LibrarySection.allCases) { section in
-                Text(section.title).tag(section)
+    @ViewBuilder
+    private var radioHero: some View {
+        if let track = player.currentTrack ?? player.catalog.first {
+            GeometryReader { proxy in
+                let artworkSize = usesTabletLayout ? 220.0 : min(142.0, proxy.size.width * 0.40)
+
+                HStack(spacing: usesTabletLayout ? 30 : 18) {
+                    ArtworkView(track: track, size: artworkSize, cornerRadius: 10)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(player.currentTrack == nil ? "Start here" : "Continue listening")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.ariaTextSecondary)
+                            Text(track.title)
+                                .font(.system(size: usesTabletLayout ? 30 : 20, weight: .bold))
+                                .foregroundStyle(.ariaTextPrimary)
+                                .lineLimit(2)
+                            Text(track.artist)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.ariaTextSecondary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Button {
+                            if player.currentTrack?.id == track.id { player.playPause() }
+                            else { player.play(track, from: player.catalog) }
+                            withAnimation(AriaMotion.playerSpring) { player.showPlayer() }
+                        } label: {
+                            Label(
+                                player.isPlaying && player.currentTrack?.id == track.id ? "Pause" : "Play",
+                                systemImage: player.isPlaying && player.currentTrack?.id == track.id ? "pause.fill" : "play.fill"
+                            )
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.ariaBackground)
+                            .padding(.horizontal, 16)
+                            .frame(height: 40)
+                            .background(.ariaAccent, in: Capsule())
+                        }
+                        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.92))
+                    }
+                    .padding(.vertical, usesTabletLayout ? 24 : 18)
+                }
+                .padding(usesTabletLayout ? 22 : 14)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .background(Color.ariaSurface)
             }
+            .frame(height: usesTabletLayout ? 264 : 170)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        } else {
+            HStack(spacing: 14) {
+                ProgressView().tint(.ariaAccent)
+                Text("Loading your library…")
+                    .font(.headline)
+                    .foregroundStyle(.ariaTextSecondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 130)
+            .background(Color.ariaSurface, in: RoundedRectangle(cornerRadius: 18))
         }
-        .pickerStyle(.segmented)
+    }
+
+    private var sectionPicker: some View {
+        HStack(spacing: 24) {
+            ForEach(LibrarySection.allCases) { section in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedSection = section
+                    }
+                } label: {
+                    Text(section.title)
+                        .font(.headline.weight(selectedSection == section ? .semibold : .regular))
+                    .foregroundStyle(selectedSection == section ? Color.ariaTextPrimary : Color.ariaTextSecondary)
+                    .padding(.bottom, 10)
+                    .overlay(alignment: .bottom) {
+                        if selectedSection == section {
+                            Rectangle()
+                                .fill(Color.ariaAccent)
+                                .frame(height: 2)
+                                .matchedGeometryEffect(id: "section", in: sectionIndicator)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+    }
+
+    private func sectionCount(_ section: LibrarySection) -> Int {
+        switch section {
+        case .songs: player.catalog.count
+        case .albums: player.albums.count
+        case .playlists: player.playlists.count
+        }
     }
 
     private var librarySearchField: some View {
@@ -129,11 +232,11 @@ struct LibraryView: View {
             }
         }
         .padding(.horizontal, 14)
-        .frame(height: 44)
-        .background(.white.opacity(0.07))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .frame(height: 48)
+        .background(Color.ariaSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(.white.opacity(0.08), lineWidth: 1)
         )
         .animation(AriaMotion.fast, value: activeSearchText.wrappedValue.isEmpty)
@@ -165,9 +268,7 @@ struct LibraryView: View {
     private var songsSection: some View {
         let songs = filteredSongs
 
-        return LazyVStack(alignment: .leading, spacing: 10) {
-            SectionTitle(title: "Songs")
-
+        return LazyVStack(alignment: .leading, spacing: 14) {
             catalogStatus
 
             if player.catalog.isEmpty, !player.isCatalogLoading {
@@ -179,10 +280,52 @@ struct LibraryView: View {
             } else if songs.isEmpty, !songSearchText.isEmpty {
                 SearchEmptyState(itemName: "songs", query: songSearchText)
             } else {
+                if songSearchText.isEmpty {
+                    quickPicks(songs)
+                }
+
+                SectionTitle(title: songSearchText.isEmpty ? "All tracks" : "Matches")
+
                 ForEach(songs) { track in
                     TrackRow(track: track, source: songs)
                 }
             }
+        }
+    }
+
+    private func quickPicks(_ songs: [Track]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle(title: "Quick picks")
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 14) {
+                    ForEach(songs.prefix(10)) { track in
+                        Button {
+                            player.play(track, from: songs)
+                            withAnimation(AriaMotion.playerSpring) { player.showPlayer() }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ArtworkView(track: track, size: usesTabletLayout ? 178 : 142, cornerRadius: 8)
+
+                                Text(track.title)
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(.ariaTextPrimary)
+                                    .lineLimit(1)
+
+                                Text(track.artist)
+                                    .font(.caption)
+                                    .foregroundStyle(.ariaTextSecondary)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: usesTabletLayout ? 178 : 142, alignment: .leading)
+                        }
+                        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.96))
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .contentMargins(.horizontal, 1, for: .scrollContent)
         }
     }
 
@@ -230,24 +373,20 @@ struct LibraryView: View {
     private var albumsSection: some View {
         let albums = filteredAlbums
 
-        LazyVStack(alignment: .leading, spacing: usesTabletLayout ? 18 : 12) {
+        LazyVStack(alignment: .leading, spacing: 16) {
             SectionTitle(title: "Albums")
 
             if albums.isEmpty, !albumSearchText.isEmpty {
                 SearchEmptyState(itemName: "albums", query: albumSearchText)
-            } else if usesTabletLayout {
+            } else {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 176, maximum: 218), spacing: 20, alignment: .top)],
+                    columns: [GridItem(.adaptive(minimum: usesTabletLayout ? 190 : 148, maximum: 230), spacing: 16)],
                     alignment: .leading,
-                    spacing: 24
+                    spacing: 22
                 ) {
                     ForEach(albums) { album in
-                        TabletAlbumCard(album: album)
+                        MobileAlbumTile(album: album)
                     }
-                }
-            } else {
-                ForEach(albums) { album in
-                    AlbumRow(album: album)
                 }
             }
         }
@@ -263,20 +402,17 @@ struct LibraryView: View {
 
             if playlists.isEmpty, !playlistSearchText.isEmpty {
                 SearchEmptyState(itemName: "playlists", query: playlistSearchText)
-            } else if usesTabletLayout {
+            } else {
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 176, maximum: 218), spacing: 20, alignment: .top)],
+                    columns: [GridItem(.adaptive(minimum: usesTabletLayout ? 190 : 148, maximum: 230), spacing: 16)],
                     alignment: .leading,
-                    spacing: 24
+                    spacing: 22
                 ) {
                     ForEach(playlists) { playlist in
-                        TabletPlaylistCard(playlist: playlist)
+                        MobilePlaylistTile(playlist: playlist)
                     }
                 }
-            } else {
-                ForEach(playlists) { playlist in
-                    PlaylistRow(playlist: playlist)
-                }
+                .padding(.bottom, usesTabletLayout ? 0 : 26)
             }
         }
     }
@@ -362,6 +498,14 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
             "Search albums"
         case .playlists:
             "Search playlists"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .songs: "waveform"
+        case .albums: "square.stack.fill"
+        case .playlists: "sparkles"
         }
     }
 }
@@ -662,6 +806,83 @@ private struct SearchEmptyState: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 32)
+    }
+}
+
+private struct MobileAlbumTile: View {
+    let album: AriaAlbum
+
+    var body: some View {
+        NavigationLink(value: LibraryRoute.album(album.id)) {
+            VStack(alignment: .leading, spacing: 11) {
+                GeometryReader { proxy in
+                    if let track = album.artworkTrack {
+                        ArtworkView(track: track, size: proxy.size.width, cornerRadius: 24)
+                    }
+                }
+                .aspectRatio(1, contentMode: .fit)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.ariaBackground)
+                        .frame(width: 34, height: 34)
+                        .background(.ariaAccent, in: Circle())
+                        .padding(9)
+                }
+
+                Text(album.title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .lineLimit(2)
+
+                HStack {
+                    Text(album.artist)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(album.year > 0 ? String(album.year) : "—")
+                }
+                .font(.caption)
+                .foregroundStyle(.ariaTextSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.96))
+    }
+}
+
+private struct MobilePlaylistTile: View {
+    let playlist: AriaPlaylist
+
+    var body: some View {
+        NavigationLink(value: LibraryRoute.playlist(playlist.id)) {
+            VStack(alignment: .leading, spacing: 11) {
+                GeometryReader { proxy in
+                    PlaylistArtwork(playlist: playlist, size: proxy.size.width, cornerRadius: 24)
+                }
+                .aspectRatio(1, contentMode: .fit)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "sparkles")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(.ariaBackground)
+                        .frame(width: 34, height: 34)
+                        .background(.ariaWarm, in: Circle())
+                        .padding(9)
+                }
+
+                Text(playlist.title)
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.ariaTextPrimary)
+                    .lineLimit(2)
+
+                Text(playlist.subtitle.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundStyle(.ariaTextSecondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.96))
     }
 }
 

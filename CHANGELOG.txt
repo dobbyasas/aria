@@ -1,6 +1,13 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.16.0
+Created: 2026-09-03
+
+Changed:
+- Rebuilt the iPhone and iPad library around a new editorial browsing layout with redesigned navigation and collection surfaces.
+- Replaced the now-playing experience with an immersive artwork-first player, responsive queue sheet, and new playback interactions.
+
 Version 1.15.0
 Created: 2026-09-01
 

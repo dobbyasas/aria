@@ -145,13 +145,9 @@ private struct TabletRootView: View {
     private var tabletSidebar: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
-                Text("ARIA")
-                    .font(.system(size: 27, weight: .semibold))
+                Text("Aria")
+                    .font(.system(size: 29, weight: .bold))
                     .foregroundStyle(.ariaTextPrimary)
-
-                Text("Your music, everywhere")
-                    .font(.caption)
-                    .foregroundStyle(.ariaTextSecondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20)
@@ -171,7 +167,7 @@ private struct TabletRootView: View {
                 .padding(.vertical, 18)
 
             VStack(alignment: .leading, spacing: 13) {
-                Text("On your server")
+                Text("Library")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.ariaTextSecondary)
 
@@ -216,8 +212,8 @@ private struct TabletRootView: View {
             .foregroundStyle(selection == destination ? .ariaBackground : .ariaTextPrimary)
             .padding(.horizontal, 14)
             .frame(height: 50)
-            .background(selection == destination ? Color.ariaAccent : .white.opacity(0.045))
-            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(selection == destination ? Color.ariaAccent : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
     }

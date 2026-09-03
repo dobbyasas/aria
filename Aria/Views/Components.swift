@@ -137,8 +137,12 @@ struct TrackRow: View {
 
     var body: some View {
         rowContent
-            .padding(.vertical, 6)
+            .padding(8)
             .frame(maxWidth: .infinity)
+            .background(player.currentTrack?.id == track.id ? Color.ariaAccent.opacity(0.08) : .clear)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.ariaDivider).frame(height: 1)
+            }
             .contentShape(Rectangle())
             .swipeActions(edge: .trailing, allowsFullSwipe: !usesCustomQueueSwipe) {
                 trailingSwipeActions
@@ -188,7 +192,7 @@ struct TrackRow: View {
     }
 
     private var rowContent: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Button {
                 handleRowTap()
             } label: {
@@ -204,7 +208,7 @@ struct TrackRow: View {
                     .foregroundStyle(.ariaTextSecondary)
                     .frame(width: 44, height: 48)
                     .background(.white.opacity(0.055))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .contentShape(Rectangle())
                     .onDrag(queueDragItemProvider) {
                         QueueDragPreview(track: track)
@@ -216,14 +220,14 @@ struct TrackRow: View {
     }
 
     private var trackIdentity: some View {
-        HStack(spacing: 12) {
-            ArtworkView(track: track, size: 52)
+        HStack(spacing: 13) {
+            ArtworkView(track: track, size: 56, cornerRadius: 7)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(track.title)
                         .foregroundStyle(.ariaTextPrimary)
-                        .font(.headline)
+                        .font(.headline.weight(.bold))
                         .lineLimit(1)
 
                     if track.isExplicit {
@@ -584,11 +588,11 @@ struct MiniPlayerBar: View {
                         }
                     } label: {
                         HStack(spacing: 12) {
-                            ArtworkView(track: track, size: 44, cornerRadius: 6)
+                            ArtworkView(track: track, size: 52, cornerRadius: 14)
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(track.title)
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(.subheadline.weight(.bold))
                                     .foregroundStyle(.ariaTextPrimary)
                                     .lineLimit(1)
                                     .contentTransition(.opacity)
@@ -609,33 +613,36 @@ struct MiniPlayerBar: View {
                         player.playPause()
                     } label: {
                         Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(.ariaTextPrimary)
-                            .frame(width: 40, height: 40)
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(.ariaBackground)
+                            .frame(width: 44, height: 44)
+                            .background(.ariaAccent, in: Circle())
                             .contentTransition(.symbolEffect(.replace))
                     }
                     .buttonStyle(AriaPressButtonStyle())
                     .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 9)
 
                 GeometryReader { geometry in
                     Capsule()
                         .fill(.ariaAccent)
-                        .frame(width: max(geometry.size.width * player.progress, 4), height: 2)
+                        .frame(width: max(geometry.size.width * player.progress, 4), height: 3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 2)
+                .frame(height: 3)
                 .opacity(player.progress > 0 ? 1 : 0)
                 .animation(AriaMotion.fast, value: player.progress)
             }
             .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Color.ariaSurface.opacity(0.82))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(.white.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(.white.opacity(0.13), lineWidth: 1)
             )
+            .shadow(color: .black.opacity(0.34), radius: 24, y: 12)
         }
     }
 }
