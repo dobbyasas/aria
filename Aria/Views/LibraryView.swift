@@ -73,6 +73,8 @@ struct LibraryView: View {
 
             Spacer()
 
+            PlaybackSessionMenu()
+
             Button {
                 isSearchFocused = true
             } label: {

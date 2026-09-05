@@ -1,4 +1,82 @@
 import SwiftUI
+
+struct PlaybackSessionMenu: View {
+    @EnvironmentObject private var player: PlayerViewModel
+
+    var showsTitle = false
+
+    var body: some View {
+        Menu {
+            Section("Playback session") {
+                Label(player.playbackSessionTitle, systemImage: sessionSymbol)
+                if let error = player.playbackSessionError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                }
+            }
+
+            if !player.playbackDevices.isEmpty {
+                Section("Connected devices") {
+                    ForEach(player.playbackDevices) { device in
+                        Label(
+                            device.isHost ? "\(device.name) · playing" : device.name,
+                            systemImage: deviceSymbol(for: device)
+                        )
+                    }
+                }
+            }
+
+            Section {
+                if player.isSharedPlaybackSession {
+                    Button("Listen Separately on This Device", systemImage: "speaker.wave.2.circle") {
+                        player.startSeparatePlaybackSession()
+                    }
+                } else {
+                    Button("Join Shared Session", systemImage: "rectangle.connected.to.line.below") {
+                        player.joinSharedPlaybackSession()
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: sessionSymbol)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(player.playbackSessionError == nil ? .ariaTextPrimary : .orange)
+                    .frame(width: 44, height: 44)
+
+                if showsTitle {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Playback")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.ariaTextSecondary)
+                        Text(player.playbackSessionTitle)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.ariaTextPrimary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel(player.playbackSessionTitle)
+    }
+
+    private var sessionSymbol: String {
+        if player.playbackSessionRole == nil {
+            return "antenna.radiowaves.left.and.right"
+        }
+        if player.isRemoteController {
+            return "iphone.and.arrow.forward"
+        }
+        return player.isSharedPlaybackSession ? "speaker.wave.2.fill" : "headphones"
+    }
+
+    private func deviceSymbol(for device: PlaybackDevice) -> String {
+        if device.isHost {
+            return "speaker.wave.2.fill"
+        }
+        return device.platform == "macOS" ? "desktopcomputer" : "iphone"
+    }
+}
 import UIKit
 
 enum AriaMotion {

@@ -158,6 +158,8 @@ struct NowPlayingView: View {
                 Spacer()
 
                 HStack(spacing: 8) {
+                    PlaybackSessionMenu()
+
                     Button {
                         lyricsTrack = track
                     } label: {

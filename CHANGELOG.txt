@@ -1,6 +1,16 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.18.0
+Created: 2026-09-05
+
+Added:
+- iPhone and iPad now become live remote controls when another Aria device is already playing, without starting duplicate audio locally.
+- Added playback-session controls for listening separately on this device and returning to the automatic shared session.
+
+Changed:
+- Now Playing, queue, progress, volume, shuffle, and repeat state stay synchronized with the device producing audio, with automatic takeover if that host disappears.
+
 Version 1.17.0
 Created: 2026-09-05
 

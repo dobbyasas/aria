@@ -68,6 +68,48 @@ struct AriaServerClient {
         throw AriaServerError.unreachable(failures)
     }
 
+    func syncPlayback(_ request: PlaybackSyncRequest) async throws -> PlaybackSyncResponse {
+        let body = try JSONEncoder().encode(request)
+        var failures: [String] = []
+
+        for baseURL in baseURLs {
+            do {
+                let data = try await sendRequest(
+                    to: playbackSyncEndpoint(baseURL: baseURL),
+                    method: "POST",
+                    body: body,
+                    contentType: "application/json"
+                )
+                return try JSONDecoder().decode(PlaybackSyncResponse.self, from: data)
+            } catch {
+                failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
+            }
+        }
+
+        throw AriaServerError.unreachable(failures)
+    }
+
+    func sendPlaybackCommand(_ command: PlaybackCommandRequest, sessionID: String) async throws {
+        let body = try JSONEncoder().encode(command)
+        var failures: [String] = []
+
+        for baseURL in baseURLs {
+            do {
+                _ = try await sendRequest(
+                    to: playbackCommandsEndpoint(sessionID: sessionID, baseURL: baseURL),
+                    method: "POST",
+                    body: body,
+                    contentType: "application/json"
+                )
+                return
+            } catch {
+                failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
+            }
+        }
+
+        throw AriaServerError.unreachable(failures)
+    }
+
     func savePlaylist(_ playlist: AriaPlaylist) async throws -> AriaServerPlaylist {
         let payload = AriaServerPlaylist(playlist: playlist)
         let body = try JSONEncoder().encode(payload)
@@ -194,6 +236,22 @@ struct AriaServerClient {
             .appendingPathComponent("downloads")
     }
 
+    private func playbackSyncEndpoint(baseURL: URL) -> URL {
+        baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("playback")
+            .appendingPathComponent("sync")
+    }
+
+    private func playbackCommandsEndpoint(sessionID: String, baseURL: URL) -> URL {
+        baseURL
+            .appendingPathComponent("api")
+            .appendingPathComponent("playback")
+            .appendingPathComponent("sessions")
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("commands")
+    }
+
     private func playlistsEndpoint(baseURL: URL) -> URL {
         baseURL
             .appendingPathComponent("api")
@@ -229,6 +287,81 @@ struct AriaServerClient {
             return true
         }
     }
+}
+
+struct PlaybackSyncRequest: Encodable {
+    var deviceID: String
+    var deviceName: String
+    var platform: String
+    var sessionID: String
+    var lastCommandID: Int
+    var state: PlaybackStateUpdate
+}
+
+struct PlaybackStateUpdate: Encodable {
+    var trackID: String?
+    var queueTrackIDs: [String]?
+    var elapsed: TimeInterval
+    var isPlaying: Bool
+    var isShuffleEnabled: Bool
+    var repeatMode: String
+    var volume: Double
+}
+
+struct PlaybackSyncResponse: Decodable {
+    var sessionID: String
+    var isShared: Bool
+    var role: PlaybackSessionRole
+    var hostDeviceID: String?
+    var hostName: String?
+    var devices: [PlaybackDevice]
+    var state: RemotePlaybackState
+    var latestCommandID: Int
+    var commands: [RemotePlaybackCommand]
+}
+
+enum PlaybackSessionRole: String, Decodable {
+    case host
+    case controller
+}
+
+struct PlaybackDevice: Decodable, Identifiable, Equatable {
+    var id: String
+    var name: String
+    var platform: String
+    var isHost: Bool
+}
+
+struct RemotePlaybackState: Codable, Equatable {
+    var trackID: String?
+    var queueTrackIDs: [String]
+    var elapsed: TimeInterval
+    var isPlaying: Bool
+    var isShuffleEnabled: Bool
+    var repeatMode: String
+    var volume: Double
+    var updatedAt: TimeInterval?
+}
+
+struct PlaybackCommandRequest: Encodable {
+    var deviceID: String
+    var action: String
+    var trackID: String? = nil
+    var targetTrackID: String? = nil
+    var queueTrackIDs: [String]? = nil
+    var position: TimeInterval? = nil
+    var value: Double? = nil
+}
+
+struct RemotePlaybackCommand: Decodable {
+    var id: Int
+    var action: String
+    var deviceID: String
+    var trackID: String?
+    var targetTrackID: String?
+    var queueTrackIDs: [String]?
+    var position: TimeInterval?
+    var value: Double?
 }
 
 struct AriaDownloadRequest: Encodable {

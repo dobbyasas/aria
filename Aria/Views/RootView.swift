@@ -186,6 +186,8 @@ private struct TabletRootView: View {
                 serverCount(title: "Songs", count: player.catalog.count)
                 serverCount(title: "Albums", count: player.albums.count)
                 serverCount(title: "Playlists", count: player.playlists.count)
+
+                PlaybackSessionMenu(showsTitle: true)
             }
             .padding(.horizontal, 20)
 
