@@ -8,12 +8,17 @@ actor AriaArtworkCache {
     private let cacheDirectory: URL
     private let fileManager = FileManager.default
     private let memoryCache = NSCache<NSURL, UIImage>()
+    private let thumbnailCache = NSCache<NSString, UIImage>()
+    private var imageTasks: [URL: Task<UIImage?, Never>] = [:]
+    private var thumbnailTasks: [String: Task<UIImage?, Never>] = [:]
 
     private init() {
         let cachesDirectory = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         cacheDirectory = cachesDirectory.appendingPathComponent("AriaArtworkCache", isDirectory: true)
 
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
+        thumbnailCache.countLimit = 300
+        thumbnailCache.totalCostLimit = 64 * 1_024 * 1_024
     }
 
     func image(for url: URL) async -> UIImage? {
@@ -21,6 +26,54 @@ actor AriaArtworkCache {
             return memoryImage
         }
 
+        if let existingTask = imageTasks[url] {
+            return await existingTask.value
+        }
+
+        let task: Task<UIImage?, Never> = Task { [weak self] in
+            guard let self else { return nil }
+            return await self.loadImage(for: url)
+        }
+        imageTasks[url] = task
+
+        let image = await task.value
+        imageTasks[url] = nil
+        return image
+    }
+
+    func image(for url: URL, targetPixelSize: CGFloat) async -> UIImage? {
+        let pixelSize = max(Int(targetPixelSize.rounded(.up)), 1)
+        let cacheKey = "\(url.absoluteString)#\(pixelSize)" as NSString
+
+        if let thumbnail = thumbnailCache.object(forKey: cacheKey) {
+            return thumbnail
+        }
+
+        let taskKey = cacheKey as String
+        if let existingTask = thumbnailTasks[taskKey] {
+            return await existingTask.value
+        }
+
+        let task: Task<UIImage?, Never> = Task { [weak self] in
+            guard let self else { return nil }
+            return await self.prepareThumbnail(for: url, pixelSize: pixelSize)
+        }
+        thumbnailTasks[taskKey] = task
+
+        let thumbnail = await task.value
+        thumbnailTasks[taskKey] = nil
+        return thumbnail
+    }
+
+    func palette(for url: URL, symbolName: String) async -> ArtworkPalette? {
+        guard let image = await image(for: url) else {
+            return nil
+        }
+
+        return image.ariaArtworkPalette(symbolName: symbolName)
+    }
+
+    private func loadImage(for url: URL) async -> UIImage? {
         if let diskImage = cachedImage(for: url) {
             memoryCache.setObject(diskImage, forKey: url as NSURL)
             return diskImage
@@ -34,12 +87,19 @@ actor AriaArtworkCache {
         return downloadedImage
     }
 
-    func palette(for url: URL, symbolName: String) async -> ArtworkPalette? {
-        guard let image = await image(for: url) else {
+    private func prepareThumbnail(for url: URL, pixelSize: Int) async -> UIImage? {
+        guard let sourceImage = await image(for: url) else {
             return nil
         }
 
-        return image.ariaArtworkPalette(symbolName: symbolName)
+        let targetSize = CGSize(width: pixelSize, height: pixelSize)
+        let thumbnail = await sourceImage.byPreparingThumbnail(ofSize: targetSize) ?? sourceImage
+        thumbnailCache.setObject(
+            thumbnail,
+            forKey: "\(url.absoluteString)#\(pixelSize)" as NSString,
+            cost: pixelSize * pixelSize * 4
+        )
+        return thumbnail
     }
 
     func removeExpiredArtwork() {

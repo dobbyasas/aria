@@ -11,6 +11,11 @@ struct QueueNotice: Identifiable, Equatable {
 }
 
 @MainActor
+final class PlaybackClock: ObservableObject {
+    @Published var elapsed: TimeInterval = 0
+}
+
+@MainActor
 final class PlayerViewModel: ObservableObject {
     @Published private(set) var catalog: [Track]
     @Published private(set) var albums: [AriaAlbum]
@@ -30,7 +35,6 @@ final class PlayerViewModel: ObservableObject {
     @Published var presentedArtist: ArtistSelection?
     @Published private(set) var queueNotice: QueueNotice?
     @Published var currentTrack: Track?
-    @Published var elapsed: TimeInterval = 0
     @Published var isPlaying = false
     @Published var isShuffleEnabled = false
     @Published var repeatMode: RepeatMode = .off
@@ -40,6 +44,13 @@ final class PlayerViewModel: ObservableObject {
         }
     }
     @Published var isPlayerPresented = true
+
+    let playbackClock = PlaybackClock()
+
+    var elapsed: TimeInterval {
+        get { playbackClock.elapsed }
+        set { playbackClock.elapsed = newValue }
+    }
 
     private let serverClient: AriaServerClient
     private let playlistStore: PlaylistStore
@@ -75,6 +86,7 @@ final class PlayerViewModel: ObservableObject {
         self.currentTrack = catalog.first
         self.serverClient = serverClient
         self.playlistStore = playlistStore
+        self.isCatalogLoading = automaticallyLoadsCatalog
 
         configureAudioSession()
         configureRemoteCommands()

@@ -2,20 +2,122 @@ import SwiftUI
 import UIKit
 
 enum AriaMotion {
-    static let fast = Animation.easeOut(duration: 0.18)
-    static let quickSpring = Animation.spring(response: 0.24, dampingFraction: 0.86)
-    static let playerSpring = Animation.spring(response: 0.32, dampingFraction: 0.86)
-    static let press = Animation.spring(response: 0.18, dampingFraction: 0.78)
-    static let queueReorder = Animation.interactiveSpring(response: 0.2, dampingFraction: 0.9, blendDuration: 0.08)
+    static let fast = Animation.easeOut(duration: 0.14)
+    static let quickSpring = Animation.spring(response: 0.22, dampingFraction: 0.9)
+    static let playerSpring = Animation.spring(response: 0.28, dampingFraction: 0.92)
+    static let press = Animation.easeOut(duration: 0.09)
+    static let queueReorder = Animation.interactiveSpring(response: 0.18, dampingFraction: 0.94, blendDuration: 0.04)
 }
 
 struct AriaPressButtonStyle: ButtonStyle {
-    var pressedScale: CGFloat = 0.94
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var pressedScale: CGFloat = 0.97
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? pressedScale : 1)
-            .animation(AriaMotion.press, value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? pressedScale : 1)
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .animation(reduceMotion ? nil : AriaMotion.press, value: configuration.isPressed)
+    }
+}
+
+struct AriaLoadingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+            HStack(alignment: .center, spacing: 5) {
+                ForEach(0..<3, id: \.self) { index in
+                    Capsule(style: .continuous)
+                        .fill(.ariaAccent)
+                        .frame(width: 4, height: 22)
+                        .scaleEffect(
+                            y: reduceMotion ? 0.72 : barScale(at: context.date, index: index),
+                            anchor: .center
+                        )
+                }
+            }
+        }
+        .frame(width: 40, height: 44)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading library")
+    }
+
+    private func barScale(at date: Date, index: Int) -> CGFloat {
+        let phase = date.timeIntervalSinceReferenceDate * 5.2 + Double(index) * 1.5
+        return 0.42 + CGFloat((sin(phase) + 1) * 0.29)
+    }
+}
+
+struct ScrollToTopScrollView<Content: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var showsScrollToTop = false
+
+    private let revealThreshold: CGFloat
+    private let bottomClearance: CGFloat
+    private let content: Content
+    private let topID = "aria-scroll-top"
+
+    init(
+        revealThreshold: CGFloat = 120,
+        bottomClearance: CGFloat = 0,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.revealThreshold = revealThreshold
+        self.bottomClearance = bottomClearance
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ZStack(alignment: .bottomTrailing) {
+                ScrollView(showsIndicators: false) {
+                    Color.clear
+                        .frame(height: 1)
+                        .id(topID)
+                        .onGeometryChange(for: Bool.self) { geometry in
+                            geometry.frame(in: .scrollView).minY < -revealThreshold
+                        } action: { shouldShow in
+                            updateScrollToTopVisibility(shouldShow)
+                        }
+
+                    content
+                }
+
+                if showsScrollToTop {
+                    Button {
+                        withAnimation(reduceMotion ? nil : AriaMotion.quickSpring) {
+                            proxy.scrollTo(topID, anchor: .top)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(.ariaAccent)
+                            .frame(width: 42, height: 42)
+                            .background(.ariaSurfaceRaised, in: Circle())
+                            .overlay {
+                                Circle()
+                                    .stroke(.white.opacity(0.12), lineWidth: 1)
+                            }
+                            .shadow(color: .black.opacity(0.34), radius: 10, y: 5)
+                    }
+                    .buttonStyle(AriaPressButtonStyle(pressedScale: 0.92))
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 16 + bottomClearance)
+                    .transition(.scale(scale: 0.82).combined(with: .opacity))
+                    .accessibilityLabel("Back to top")
+                    .zIndex(10)
+                }
+            }
+        }
+    }
+
+    private func updateScrollToTopVisibility(_ shouldShow: Bool) {
+        guard shouldShow != showsScrollToTop else { return }
+        withAnimation(reduceMotion ? nil : AriaMotion.fast) {
+            showsScrollToTop = shouldShow
+        }
     }
 }
 
@@ -27,18 +129,16 @@ struct ArtistNameLink: View {
     let name: String
 
     var body: some View {
-        Text(name)
-            .foregroundStyle(isHovering ? Color.ariaAccent : Color.ariaTextSecondary)
-            .contentShape(Rectangle())
-            .highPriorityGesture(
-                TapGesture().onEnded {
-                    player.presentArtist(named: name)
-                }
-            )
+        Button {
+            player.presentArtist(named: name)
+        } label: {
+            Text(name)
+                .foregroundStyle(isHovering ? Color.ariaAccent : Color.ariaTextSecondary)
+                .contentShape(Rectangle())
+        }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens artist")
             .accessibilityAddTraits(.isLink)
-            .accessibilityAction {
-                player.presentArtist(named: name)
-            }
             .onHover { hovering in
                 isHovering = hovering
                 prefetchTask?.cancel()
@@ -72,7 +172,6 @@ struct ArtworkView: View {
                     .resizable()
                     .scaledToFill()
                     .frame(width: size, height: size)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
         .frame(width: size, height: size)
@@ -81,7 +180,6 @@ struct ArtworkView: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .stroke(.white.opacity(0.12), lineWidth: 1)
         )
-        .animation(AriaMotion.fast, value: track.artworkURL)
         .task(id: track.artworkURL) {
             await loadArtwork()
         }
@@ -110,7 +208,11 @@ struct ArtworkView: View {
 
         cachedArtwork = nil
 
-        guard let image = await AriaArtworkCache.shared.image(for: artworkURL) else {
+        let targetPixelSize = size * UIScreen.main.scale
+        guard let image = await AriaArtworkCache.shared.image(
+            for: artworkURL,
+            targetPixelSize: targetPixelSize
+        ) else {
             return
         }
 
@@ -118,34 +220,43 @@ struct ArtworkView: View {
             return
         }
 
-        withAnimation(AriaMotion.fast) {
-            cachedArtwork = image
-        }
+        cachedArtwork = image
     }
 }
 
 struct TrackRow: View {
     @EnvironmentObject private var player: PlayerViewModel
     @State private var isAddToPlaylistPresented = false
+    @State private var queueSwipeOffset: CGFloat = 0
+    @State private var isQueueSwipeActive = false
+    @State private var suppressesPlayback = false
 
     let track: Track
     var source: [Track]
     var showAlbum = true
     var playlistForRemoval: AriaPlaylist? = nil
     var usesCustomQueueSwipe = false
+    var playbackDisabled = false
     var queueDragItemProvider: (() -> NSItemProvider)? = nil
 
     var body: some View {
-        rowContent
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .swipeActions(edge: .trailing, allowsFullSwipe: !usesCustomQueueSwipe) {
-                trailingSwipeActions
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: playlistForRemoval != nil) {
-                leadingSwipeActions
-            }
+        ZStack(alignment: .leading) {
+            Label("Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.black)
+                .padding(.leading, 16)
+                .opacity(min(queueSwipeOffset / 42, 1))
+
+            rowContent
+                .background(Color.ariaBackground)
+                .offset(x: queueSwipeOffset)
+                .simultaneousGesture(addToQueueGesture)
+        }
+        .background(queueSwipeOffset > 0 ? Color.ariaAccent : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
         .sheet(isPresented: $isAddToPlaylistPresented) {
             AddToPlaylistSheet(track: track)
                 .environmentObject(player)
@@ -155,46 +266,14 @@ struct TrackRow: View {
         }
     }
 
-    @ViewBuilder
-    private var trailingSwipeActions: some View {
-        if !usesCustomQueueSwipe {
-            Button {
-                addTrackToQueue()
-            } label: {
-                Label("Queue", systemImage: "text.line.last.and.arrowtriangle.forward")
-            }
-            .tint(.ariaAccent)
-
-            Button {
-                isAddToPlaylistPresented = true
-            } label: {
-                Label("Playlist", systemImage: "text.badge.plus")
-            }
-            .tint(.ariaSurfaceRaised)
-        }
-    }
-
-    @ViewBuilder
-    private var leadingSwipeActions: some View {
-        if let playlistForRemoval {
-            Button(role: .destructive) {
-                withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
-                    player.remove(track, from: playlistForRemoval)
-                }
-            } label: {
-                Label("Remove", systemImage: "trash")
-            }
-        }
-    }
-
     private var rowContent: some View {
         HStack(spacing: 8) {
-            Button {
-                handleRowTap()
-            } label: {
-                trackIdentity
-            }
-            .buttonStyle(.plain)
+            trackIdentity
+                .onTapGesture(perform: handleRowTap)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: "Play") {
+                    handleRowTap()
+                }
 
             trackActionButton
 
@@ -203,8 +282,6 @@ struct TrackRow: View {
                     .font(.callout.weight(.bold))
                     .foregroundStyle(.ariaTextSecondary)
                     .frame(width: 44, height: 48)
-                    .background(.white.opacity(0.055))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .contentShape(Rectangle())
                     .onDrag(queueDragItemProvider) {
                         QueueDragPreview(track: track)
@@ -212,17 +289,19 @@ struct TrackRow: View {
                     .accessibilityLabel("Reorder \(track.title)")
             }
         }
+        .padding(.horizontal, 2)
+        .frame(minHeight: 64)
         .contentShape(Rectangle())
     }
 
     private var trackIdentity: some View {
         HStack(spacing: 12) {
-            ArtworkView(track: track, size: 52)
+            ArtworkView(track: track, size: 52, cornerRadius: 4)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(track.title)
-                        .foregroundStyle(.ariaTextPrimary)
+                        .foregroundStyle(player.currentTrack?.id == track.id ? .ariaAccent : .ariaTextPrimary)
                         .font(.headline)
                         .lineLimit(1)
 
@@ -237,7 +316,7 @@ struct TrackRow: View {
                 }
 
                 HStack(spacing: 0) {
-                    ArtistNameLink(name: track.artist)
+                    Text(track.artist)
                     if showAlbum {
                         Text(" • \(track.album)")
                     }
@@ -254,10 +333,6 @@ struct TrackRow: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.ariaAccent)
                     .contentTransition(.symbolEffect(.replace))
-            } else if !usesCustomQueueSwipe {
-                Text(track.duration.ariaClockTime)
-                    .font(.caption)
-                    .foregroundStyle(.ariaTextSecondary)
             }
         }
         .frame(maxWidth: .infinity)
@@ -291,11 +366,39 @@ struct TrackRow: View {
             } label: {
                 Label("Add to Playlist", systemImage: "text.badge.plus")
             }
+
+            Button {
+                player.presentArtist(named: track.artist)
+            } label: {
+                Label("View Artist", systemImage: "person.crop.circle")
+            }
+
+            if let playlistForRemoval {
+                Divider()
+
+                Button(role: .destructive) {
+                    withAnimation(AriaMotion.quickSpring) {
+                        player.remove(track, from: playlistForRemoval)
+                    }
+                } label: {
+                    Label("Remove from Playlist", systemImage: "trash")
+                }
+            } else if usesCustomQueueSwipe {
+                Divider()
+
+                Button(role: .destructive) {
+                    withAnimation(AriaMotion.quickSpring) {
+                        player.removeFromQueue(track)
+                    }
+                } label: {
+                    Label("Remove from Queue", systemImage: "trash")
+                }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.ariaTextSecondary)
-                .frame(width: 42, height: 48)
+                .frame(width: 44, height: 48)
                 .contentShape(Rectangle())
         }
         .menuStyle(.button)
@@ -304,6 +407,7 @@ struct TrackRow: View {
     }
 
     private func handleRowTap() {
+        guard !playbackDisabled, !suppressesPlayback, abs(queueSwipeOffset) < 1 else { return }
         player.play(track, from: source)
         withAnimation(AriaMotion.playerSpring) {
             player.showPlayer()
@@ -318,9 +422,43 @@ struct TrackRow: View {
     }
 
     private func addTrackToQueue() {
-        withAnimation(.spring(response: 0.26, dampingFraction: 0.88)) {
+        withAnimation(AriaMotion.quickSpring) {
             player.addToQueue(track)
         }
+    }
+
+    private var addToQueueGesture: some Gesture {
+        DragGesture(minimumDistance: 26, coordinateSpace: .local)
+            .onChanged { value in
+                guard !usesCustomQueueSwipe, value.startLocation.x > 28 else { return }
+                let horizontalDistance = value.translation.width
+                let verticalDistance = abs(value.translation.height)
+                guard horizontalDistance > 10, horizontalDistance > verticalDistance * 1.6 else { return }
+
+                isQueueSwipeActive = true
+                suppressesPlayback = true
+                queueSwipeOffset = min(horizontalDistance * 0.82, 96)
+            }
+            .onEnded { value in
+                guard isQueueSwipeActive else { return }
+                let shouldQueue = value.translation.width > 78
+                    || value.predictedEndTranslation.width > 138
+
+                if shouldQueue {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.72)
+                    addTrackToQueue()
+                }
+
+                withAnimation(AriaMotion.quickSpring) {
+                    queueSwipeOffset = 0
+                }
+                isQueueSwipeActive = false
+
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    suppressesPlayback = false
+                }
+            }
     }
 }
 
@@ -573,16 +711,17 @@ struct PlaylistArtwork: View {
 
 struct MiniPlayerBar: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var playbackClock: PlaybackClock
 
     var body: some View {
         if let track = player.currentTrack {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
-                    Button {
-                        withAnimation(AriaMotion.playerSpring) {
-                            player.showPlayer()
-                        }
-                    } label: {
+            ZStack(alignment: .topTrailing) {
+                Button {
+                    withAnimation(AriaMotion.playerSpring) {
+                        player.showPlayer()
+                    }
+                } label: {
+                    VStack(spacing: 0) {
                         HStack(spacing: 12) {
                             ArtworkView(track: track, size: 44, cornerRadius: 6)
 
@@ -593,49 +732,61 @@ struct MiniPlayerBar: View {
                                     .lineLimit(1)
                                     .contentTransition(.opacity)
 
-                                ArtistNameLink(name: track.artist)
+                                Text(track.artist)
                                     .font(.caption)
                                     .foregroundStyle(.ariaTextSecondary)
                                     .lineLimit(1)
                                     .contentTransition(.opacity)
                             }
+
+                            Spacer()
+
+                            Color.clear
+                                .frame(width: 40, height: 40)
                         }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+
+                        GeometryReader { geometry in
+                            Capsule()
+                                .fill(.ariaAccent)
+                                .frame(width: max(geometry.size.width * currentProgress, 4), height: 2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(height: 2)
+                        .opacity(currentProgress > 0 ? 1 : 0)
+                        .animation(AriaMotion.fast, value: currentProgress)
                     }
-                    .buttonStyle(AriaPressButtonStyle(pressedScale: 0.98))
-
-                    Spacer()
-
-                    Button {
-                        player.playPause()
-                    } label: {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title2.weight(.bold))
-                            .foregroundStyle(.ariaTextPrimary)
-                            .frame(width: 40, height: 40)
-                            .contentTransition(.symbolEffect(.replace))
-                    }
-                    .buttonStyle(AriaPressButtonStyle())
-                    .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                    .contentShape(Rectangle())
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .buttonStyle(AriaPressButtonStyle(pressedScale: 0.99))
+                .accessibilityLabel("Open now playing")
 
-                GeometryReader { geometry in
-                    Capsule()
-                        .fill(.ariaAccent)
-                        .frame(width: max(geometry.size.width * player.progress, 4), height: 2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    player.playPause()
+                } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(.ariaTextPrimary)
+                        .frame(width: 40, height: 40)
+                        .contentTransition(.symbolEffect(.replace))
                 }
-                .frame(height: 2)
-                .opacity(player.progress > 0 ? 1 : 0)
-                .animation(AriaMotion.fast, value: player.progress)
+                .buttonStyle(AriaPressButtonStyle())
+                .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                .padding(.top, 8)
+                .padding(.trailing, 10)
             }
             .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .stroke(.white.opacity(0.08), lineWidth: 1)
             )
         }
+    }
+
+    private var currentProgress: Double {
+        guard let track = player.currentTrack, track.duration > 0 else { return 0 }
+        return min(max(playbackClock.elapsed / track.duration, 0), 1)
     }
 }

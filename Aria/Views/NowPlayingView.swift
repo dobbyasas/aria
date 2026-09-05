@@ -4,8 +4,11 @@ import UniformTypeIdentifiers
 
 struct NowPlayingView: View {
     @EnvironmentObject private var player: PlayerViewModel
-    @GestureState private var pullDistance: CGFloat = 0
+    @EnvironmentObject private var playbackClock: PlaybackClock
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @GestureState private var trackSwipeDistance: CGFloat = 0
+    @State private var pullDistance: CGFloat = 0
+    @State private var isPlayerScrollAtTop = true
     @State private var backgroundArtwork: ArtworkPalette?
     @State private var backgroundArtworkTrackID: UUID?
     @State private var draggedQueueTrackID: UUID?
@@ -22,6 +25,11 @@ struct NowPlayingView: View {
         .sheet(item: $lyricsTrack) { track in
             LyricsSheet(track: track)
                 .environmentObject(player)
+        }
+        .offset(y: max(pullDistance, 0))
+        .simultaneousGesture(pullToLibraryGesture)
+        .onDisappear {
+            pullDistance = 0
         }
     }
 
@@ -42,7 +50,6 @@ struct NowPlayingView: View {
                     compactPlayerLayout(for: track, artworkSize: artworkSize, isTablet: isTablet)
                 }
             }
-            .simultaneousGesture(pullToLibraryGesture)
             .task(id: track.id) {
                 await loadBackgroundArtwork(for: track)
             }
@@ -51,10 +58,18 @@ struct NowPlayingView: View {
 
     private func compactPlayerLayout(for track: Track, artworkSize: CGFloat, isTablet: Bool) -> some View {
         ScrollView(showsIndicators: false) {
+            Color.clear
+                .frame(height: 1)
+                .onGeometryChange(for: Bool.self) { geometry in
+                    geometry.frame(in: .scrollView).minY >= -1
+                } action: { isAtTop in
+                    isPlayerScrollAtTop = isAtTop
+                }
+
             VStack(spacing: isTablet ? 28 : 24) {
                 header(for: track)
 
-                swipeableTrackIdentity(for: track, artworkSize: artworkSize)
+                trackIdentity(for: track, artworkSize: artworkSize)
 
                 progressSection(for: track)
 
@@ -66,7 +81,6 @@ struct NowPlayingView: View {
             .padding(.bottom, 28)
             .frame(maxWidth: isTablet ? 600 : 440)
             .frame(maxWidth: .infinity)
-            .offset(y: min(pullDistance * 0.18, 18))
         }
     }
 
@@ -77,7 +91,7 @@ struct NowPlayingView: View {
             VStack(spacing: 24) {
                 header(for: track)
 
-                swipeableTrackIdentity(for: track, artworkSize: artworkSize)
+                trackIdentity(for: track, artworkSize: artworkSize)
 
                 progressSection(for: track)
 
@@ -95,7 +109,6 @@ struct NowPlayingView: View {
         .padding(.vertical, 32)
         .frame(maxWidth: 1080, maxHeight: .infinity)
         .frame(maxWidth: .infinity)
-        .offset(y: min(pullDistance * 0.12, 12))
     }
 
     private func background(for track: Track) -> some View {
@@ -120,60 +133,68 @@ struct NowPlayingView: View {
     }
 
     private func header(for track: Track) -> some View {
-        HStack(alignment: .center) {
-            Button {
-                player.hidePlayer()
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.ariaTextPrimary)
-                    .frame(width: 40, height: 40)
-            }
-            .buttonStyle(AriaPressButtonStyle())
-            .accessibilityLabel("Close player")
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Now Playing")
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.ariaTextPrimary)
-
-                Text(track.album)
-                    .font(.caption)
-                    .foregroundStyle(.ariaTextSecondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            HStack(spacing: 10) {
-                Button {
-                    lyricsTrack = track
-                } label: {
-                    Image(systemName: "quote.bubble")
-                        .font(.headline)
+        VStack(spacing: 2) {
+            HStack(alignment: .center) {
+                Button(action: dismissPlayer) {
+                    Image(systemName: "chevron.down")
+                        .font(.headline.weight(.semibold))
                         .foregroundStyle(.ariaTextPrimary)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(AriaPressButtonStyle())
-                .accessibilityLabel("Show lyrics")
+                .accessibilityLabel("Close player")
 
-                AddToPlaylistButton(track: track, size: 40, hasBackground: false)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Now Playing")
+                        .font(.headline.weight(.semibold))
+                        .foregroundStyle(.ariaTextPrimary)
+
+                    Text(track.album)
+                        .font(.caption)
+                        .foregroundStyle(.ariaTextSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button {
+                        lyricsTrack = track
+                    } label: {
+                        Image(systemName: "quote.bubble")
+                            .font(.headline)
+                            .foregroundStyle(.ariaTextPrimary)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(AriaPressButtonStyle())
+                    .accessibilityLabel("Show lyrics")
+
+                    AddToPlaylistButton(track: track, size: 44, hasBackground: false)
+                }
             }
         }
     }
 
     private var pullToLibraryGesture: some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .local)
-            .updating($pullDistance) { value, state, _ in
-                guard isLibraryPull(value) else { return }
-                state = value.translation.height
+        DragGesture(minimumDistance: 24, coordinateSpace: .global)
+            .onChanged { value in
+                guard player.currentTrack != nil, isPlayerScrollAtTop, isLibraryPull(value) else { return }
+                var transaction = Transaction()
+                transaction.animation = nil
+                withTransaction(transaction) {
+                    pullDistance = rubberBandDistance(value.translation.height)
+                }
             }
             .onEnded { value in
-                guard isLibraryPull(value) else { return }
-                guard value.translation.height > 42 || value.predictedEndTranslation.height > 84 else { return }
+                let shouldDismiss = isPlayerScrollAtTop && isLibraryPull(value)
+                    && (value.translation.height > 84 || value.predictedEndTranslation.height > 150)
 
-                withAnimation(AriaMotion.playerSpring) {
-                    player.hidePlayer()
+                if shouldDismiss {
+                    dismissPlayer()
+                } else {
+                    withAnimation(reduceMotion ? nil : AriaMotion.playerSpring) {
+                        pullDistance = 0
+                    }
                 }
             }
     }
@@ -181,12 +202,17 @@ struct NowPlayingView: View {
     private func isLibraryPull(_ value: DragGesture.Value) -> Bool {
         let verticalDistance = value.translation.height
         let horizontalDistance = abs(value.translation.width)
-        return verticalDistance > 0 && verticalDistance > horizontalDistance * 1.15
+        return verticalDistance > 20 && verticalDistance > horizontalDistance * 1.35
     }
 
-    private func swipeableTrackIdentity(for track: Track, artworkSize: CGFloat) -> some View {
+    private func rubberBandDistance(_ distance: CGFloat) -> CGFloat {
+        guard distance > 220 else { return max(distance, 0) }
+        return 220 + (distance - 220) * 0.22
+    }
+
+    private func trackIdentity(for track: Track, artworkSize: CGFloat) -> some View {
         VStack(spacing: 24) {
-            ArtworkView(track: track, size: artworkSize, cornerRadius: 8)
+            ArtworkView(track: track, size: artworkSize, cornerRadius: 4)
                 .shadow(color: .black.opacity(0.28), radius: 18, x: 0, y: 12)
                 .id(track.id)
                 .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -194,16 +220,24 @@ struct NowPlayingView: View {
             songIdentity(for: track)
         }
         .contentShape(Rectangle())
-        .offset(x: clampedTrackSwipeOffset)
+        .offset(x: trackSwipeOffset)
         .simultaneousGesture(trackNavigationGesture)
+        .accessibilityHint("Swipe left for the next song or right for the previous song")
+        .accessibilityAction(named: "Next song") {
+            playNextTrack()
+        }
+        .accessibilityAction(named: "Previous song") {
+            playPreviousTrack()
+        }
     }
 
-    private var clampedTrackSwipeOffset: CGFloat {
-        min(max(trackSwipeDistance * 0.12, -18), 18)
+    private var trackSwipeOffset: CGFloat {
+        let distance = trackSwipeDistance * 0.24
+        return min(max(distance, -58), 58)
     }
 
     private var trackNavigationGesture: some Gesture {
-        DragGesture(minimumDistance: 24, coordinateSpace: .local)
+        DragGesture(minimumDistance: 26, coordinateSpace: .local)
             .updating($trackSwipeDistance) { value, state, _ in
                 guard isTrackNavigationSwipe(value) else { return }
                 state = value.translation.width
@@ -211,14 +245,14 @@ struct NowPlayingView: View {
             .onEnded { value in
                 guard isTrackNavigationSwipe(value) else { return }
 
-                let committedDistance = abs(value.translation.width)
-                let predictedDistance = abs(value.predictedEndTranslation.width)
-                guard committedDistance > 72 || predictedDistance > 132 else { return }
+                let travelledFarEnough = abs(value.translation.width) > 72
+                    || abs(value.predictedEndTranslation.width) > 136
+                guard travelledFarEnough else { return }
 
                 if value.translation.width < 0 {
-                    player.skipToNextTrack()
+                    playNextTrack()
                 } else {
-                    player.skipToPreviousTrack()
+                    playPreviousTrack()
                 }
             }
     }
@@ -226,7 +260,30 @@ struct NowPlayingView: View {
     private func isTrackNavigationSwipe(_ value: DragGesture.Value) -> Bool {
         let horizontalDistance = abs(value.translation.width)
         let verticalDistance = abs(value.translation.height)
-        return horizontalDistance > 28 && horizontalDistance > verticalDistance * 1.35
+        return horizontalDistance > 12 && horizontalDistance > verticalDistance * 1.4
+    }
+
+    private func playNextTrack() {
+        guard player.canSkipToNextTrack else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        withAnimation(reduceMotion ? nil : AriaMotion.quickSpring) {
+            player.skipToNextTrack()
+        }
+    }
+
+    private func playPreviousTrack() {
+        guard player.canSkipToPreviousTrack else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+        withAnimation(reduceMotion ? nil : AriaMotion.quickSpring) {
+            player.skipToPreviousTrack()
+        }
+    }
+
+    private func dismissPlayer() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        withAnimation(reduceMotion ? nil : AriaMotion.playerSpring) {
+            player.hidePlayer()
+        }
     }
 
     private func loadBackgroundArtwork(for track: Track) async {
@@ -276,7 +333,7 @@ struct NowPlayingView: View {
         VStack(spacing: 8) {
             Slider(
                 value: Binding(
-                    get: { player.progress },
+                    get: { currentProgress(for: track) },
                     set: { player.seek(toProgress: $0) }
                 ),
                 in: 0...1
@@ -284,7 +341,7 @@ struct NowPlayingView: View {
             .tint(.ariaAccent)
 
             HStack {
-                Text(player.elapsed.ariaClockTime)
+                Text(playbackClock.elapsed.ariaClockTime)
                     .contentTransition(.numericText())
                 Spacer()
                 Text(track.duration.ariaClockTime)
@@ -293,6 +350,11 @@ struct NowPlayingView: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.ariaTextSecondary)
         }
+    }
+
+    private func currentProgress(for track: Track) -> Double {
+        guard track.duration > 0 else { return 0 }
+        return min(max(playbackClock.elapsed / track.duration, 0), 1)
     }
 
     private var mainControls: some View {
@@ -413,16 +475,10 @@ struct NowPlayingView: View {
         ZStack {
             Color.ariaBackground.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                if player.isCatalogLoading {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                        .tint(.ariaAccent)
-
-                    Text("Loading songs from Fedora")
-                        .font(.title2.bold())
-                        .foregroundStyle(.ariaTextPrimary)
-                } else {
+            if player.isCatalogLoading {
+                AriaLoadingIndicator()
+            } else {
+                VStack(spacing: 16) {
                     Image(systemName: "music.note")
                         .font(.system(size: 44, weight: .semibold))
                         .foregroundStyle(.ariaAccent)
@@ -430,13 +486,12 @@ struct NowPlayingView: View {
                     Text("Choose a song to begin")
                         .font(.title2.bold())
                         .foregroundStyle(.ariaTextPrimary)
+                    Button("Open library") {
+                        player.hidePlayer()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.ariaAccent)
                 }
-
-                Button("Open library") {
-                    player.hidePlayer()
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.ariaAccent)
             }
         }
     }
@@ -445,6 +500,7 @@ struct NowPlayingView: View {
 private struct LyricsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var player: PlayerViewModel
+    @EnvironmentObject private var playbackClock: PlaybackClock
 
     let track: Track
 
@@ -453,7 +509,7 @@ private struct LyricsSheet: View {
     @State private var isLoading = true
 
     private var activeLineID: String? {
-        lyrics?.activeLineID(at: player.elapsed)
+        lyrics?.activeLineID(at: playbackClock.elapsed)
     }
 
     var body: some View {
@@ -637,33 +693,33 @@ private struct QueueTrackRow: View {
     @EnvironmentObject private var player: PlayerViewModel
     @Binding var draggedTrackID: UUID?
     @State private var swipeOffset: CGFloat = 0
-    @State private var swipeStartOffset: CGFloat?
     @State private var isHorizontalSwipe = false
+    @State private var suppressesPlayback = false
 
     let track: Track
     let isDragging: Bool
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            removeButton
-                .mask(alignment: .trailing) {
-                    Rectangle()
-                        .frame(width: deleteRevealWidth)
-                }
-                .allowsHitTesting(deleteRevealWidth >= 70)
+            Label("Remove", systemImage: "trash.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .padding(.trailing, 14)
+                .opacity(min(-swipeOffset / 42, 1))
 
             TrackRow(
                 track: track,
                 source: player.queue,
                 showAlbum: false,
                 usesCustomQueueSwipe: true,
+                playbackDisabled: suppressesPlayback,
                 queueDragItemProvider: dragItemProvider
             )
-            .padding(.horizontal, 4)
-            .background(Color.ariaBackground.opacity(0.94))
+            .background(Color.ariaBackground)
             .offset(x: swipeOffset)
             .simultaneousGesture(swipeGesture)
         }
+        .background(swipeOffset < 0 ? Color.red : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .scaleEffect(isDragging ? 0.985 : 1)
         .opacity(isDragging ? 0.7 : 1)
@@ -674,60 +730,35 @@ private struct QueueTrackRow: View {
         }
     }
 
-    private var deleteRevealWidth: CGFloat {
-        min(max(-swipeOffset, 0), 82)
-    }
-
-    private var removeButton: some View {
-        Button(role: .destructive) {
-            removeFromQueue()
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "trash.fill")
-                    .font(.callout.weight(.semibold))
-
-                Text("Remove")
-                    .font(.caption2.weight(.bold))
-            }
-            .foregroundStyle(.white)
-            .frame(width: 82)
-            .frame(height: 64)
-            .background(Color.red)
-        }
-        .buttonStyle(.plain)
-    }
-
     private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+        DragGesture(minimumDistance: 26, coordinateSpace: .local)
             .onChanged { value in
-                if swipeStartOffset == nil {
-                    let horizontalDistance = abs(value.translation.width)
-                    let verticalDistance = abs(value.translation.height)
-                    guard horizontalDistance > verticalDistance * 1.25 else { return }
+                let horizontalDistance = -value.translation.width
+                let verticalDistance = abs(value.translation.height)
+                guard horizontalDistance > 10, horizontalDistance > verticalDistance * 1.6 else { return }
 
-                    swipeStartOffset = swipeOffset
-                    isHorizontalSwipe = true
-                }
-
-                guard isHorizontalSwipe else { return }
-                let proposedOffset = (swipeStartOffset ?? 0) + value.translation.width
-                swipeOffset = min(max(proposedOffset, -132), 0)
+                isHorizontalSwipe = true
+                suppressesPlayback = true
+                swipeOffset = max(value.translation.width * 0.82, -96)
             }
             .onEnded { value in
-                defer {
-                    swipeStartOffset = nil
-                    isHorizontalSwipe = false
-                }
-
                 guard isHorizontalSwipe else { return }
-                let predictedOffset = (swipeStartOffset ?? 0) + value.predictedEndTranslation.width
+                let shouldRemove = value.translation.width < -78
+                    || value.predictedEndTranslation.width < -138
 
-                if swipeOffset < -104 || predictedOffset < -150 {
+                if shouldRemove {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.78)
                     removeFromQueue()
                 } else {
                     withAnimation(AriaMotion.quickSpring) {
-                        swipeOffset = swipeOffset < -42 ? -82 : 0
+                        swipeOffset = 0
                     }
+                }
+                isHorizontalSwipe = false
+
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(180))
+                    suppressesPlayback = false
                 }
             }
     }

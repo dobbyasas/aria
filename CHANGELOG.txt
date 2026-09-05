@@ -1,6 +1,16 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.17.0
+Created: 2026-09-05
+
+Added:
+- Added album sorting, scroll-to-top controls, and direct swipe gestures for queue management and track navigation.
+
+Changed:
+- Refined the library, album, mini-player, and now-playing interfaces with clearer navigation, responsive layouts, haptic feedback, and reduced-motion support.
+- Improved artwork loading and playback progress updates for smoother scrolling and animation.
+
 Version 1.15.1
 Created: 2026-09-03
 
