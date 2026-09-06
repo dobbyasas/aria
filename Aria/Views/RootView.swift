@@ -3,6 +3,7 @@ import UIKit
 
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var player = PlayerViewModel()
 
     var body: some View {
@@ -23,11 +24,12 @@ struct RootView: View {
 
                     Spacer()
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
                 .zIndex(3)
             }
         }
         .environmentObject(player)
+        .environmentObject(player.playbackClock)
         .tint(.ariaAccent)
         .preferredColorScheme(.dark)
         .task {
@@ -42,18 +44,24 @@ struct RootView: View {
     private var phoneRoot: some View {
         ZStack {
             LibraryView()
+                .allowsHitTesting(!player.isPlayerPresented || player.presentedArtist != nil)
+                .accessibilityHidden(player.isPlayerPresented && player.presentedArtist == nil)
                 .safeAreaInset(edge: .bottom) {
                     if !player.isPlayerPresented {
                         MiniPlayerBar()
-                            .padding(.horizontal, 14)
+                            .padding(.horizontal, 8)
                             .padding(.bottom, 8)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                            .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
                 }
 
             if player.isPlayerPresented && player.presentedArtist == nil {
                 NowPlayingView()
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .move(edge: .bottom).combined(with: .opacity)
+                    )
                     .zIndex(1)
             }
         }
@@ -178,6 +186,8 @@ private struct TabletRootView: View {
                 serverCount(title: "Songs", count: player.catalog.count)
                 serverCount(title: "Albums", count: player.albums.count)
                 serverCount(title: "Playlists", count: player.playlists.count)
+
+                PlaybackSessionMenu(showsTitle: true)
             }
             .padding(.horizontal, 20)
 
