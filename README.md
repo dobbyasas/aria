@@ -9,6 +9,40 @@ Artist names open dedicated pages with a YouTube Music portrait, downloaded song
 On iPad, Aria uses a persistent navigation sidebar with library counts and a mini-player, adaptive album and playlist grids, spacious detail screens, and a two-column Now Playing layout with the queue alongside the main controls. Narrow iPad multitasking automatically falls back to the compact iPhone layout.
 
 The app now loads its catalog from the Fedora song server and streams each song with `AVPlayer`.
+
+## Song radio
+
+Choose **Start Radio** from a song's menu, the Now Playing screen, or a YouTube
+Music song search result. Aria plays the selected song first, then follows
+YouTube Music's radio recommendations. It downloads missing songs to the shared
+Fedora library before playback and prepares three upcoming songs at a time.
+Existing downloads are reused, and catalog updates preserve the current queue
+and playback position. Downloads use the same server as the rest of the app;
+they are not offline files stored on the iPhone.
+
+**Remove song** immediately skips the current song, excludes it from future
+radio on this device, and deletes its shared download and playlist references.
+If the downloader is busy, deletion waits until it finishes. Failed deletions
+show a retry button and survive an app restart. Explicitly starting radio from
+an excluded song allows that seed again. **Stop radio** stops adding songs;
+already prepared songs remain playable, and an accepted server download may
+finish. Choosing another song or playlist stops the previous radio session.
+
+Radio uses YouTube Music's anonymous radio queue, so its recommendations can
+differ from those of a signed-in YouTube account. The web endpoint can change;
+connection and recommendation errors appear in the player with a retry action.
+When this iPhone is controlling another device, starting radio creates separate
+playback on the iPhone. If the phone already hosts shared playback, it keeps that
+session.
+
+Install the matching `feature/iphone-song-radio` server changes along with this
+app build; single-song removal requires `DELETE /api/tracks/<track-id>`.
+
+Run the radio regression tests using the Aria scheme's Test action in Xcode, or
+`xcodebuild -project Aria.xcodeproj -scheme Aria -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test`.
+
+## Server connection
+
 It tries Tailscale first at `http://100.93.250.104:8000`, then falls back to the local Wi-Fi address `http://192.168.0.16:8000`.
 The Library plus button opens a downloader with YouTube Music album search, artwork and metadata, repeatable three-at-a-time results, downloaded-album detection, a manual-link fallback, and live server job progress while new songs are saved into the Fedora songs folder.
 

@@ -70,7 +70,7 @@ struct YouTubeMusicPlaylistResult: Identifiable, Equatable {
     }
 }
 
-struct YouTubeMusicSearchClient {
+struct YouTubeMusicSearchClient: SongRadioProviding {
     private struct WebConfiguration: Sendable {
         let apiKey: String
         let clientVersion: String
@@ -191,6 +191,94 @@ struct YouTubeMusicSearchClient {
     func searchSongs(query: String, limit: Int = 60) async throws -> [YouTubeMusicSongResult] {
         let response = try await filteredSearchResponse(query: query, chipTitle: "Songs")
         return Self.parseSongs(from: response, limit: limit)
+    }
+
+    func radio(seedVideoID: String, continuation: String? = nil) async throws -> SongRadioPage {
+        let configuration = try await fetchWebConfiguration()
+        var components = URLComponents(string: "https://music.youtube.com/youtubei/v1/next")!
+        components.queryItems = [URLQueryItem(name: "key", value: configuration.apiKey)]
+        if let continuation {
+            components.queryItems?.append(contentsOf: [
+                URLQueryItem(name: "ctoken", value: continuation),
+                URLQueryItem(name: "continuation", value: continuation)
+            ])
+        }
+        let body: [String: Any] = [
+            "context": ["client": [
+                "clientName": "WEB_REMIX", "clientVersion": configuration.clientVersion,
+                "hl": "en", "gl": "US"
+            ]],
+            "videoId": seedVideoID,
+            "playlistId": "RDAMVM\(seedVideoID)",
+            "params": "wAEB",
+            "isAudioOnly": true,
+            "enablePersistentPlaylistPanel": true,
+            "tunerSettingValue": "AUTOMIX_SETTING_NORMAL"
+        ]
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 18
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+        request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(Self.consentCookie, forHTTPHeaderField: "Cookie")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Self.validate(response)
+        return try Self.parseRadioPage(JSONSerialization.jsonObject(with: data))
+    }
+
+    static func parseRadioPage(_ response: Any) throws -> SongRadioPage {
+        // Restrict parsing to the queue so counterpart videos and unrelated shelves
+        // cannot become extra songs or change YouTube's ordering.
+        func panel(in value: Any) -> [String: Any]? {
+            if let dictionary = value as? [String: Any] {
+                for key in ["playlistPanelRenderer", "playlistPanelContinuation"] {
+                    if let panel = dictionary[key] as? [String: Any] { return panel }
+                }
+                for child in dictionary.values {
+                    if let result = panel(in: child) { return result }
+                }
+            } else if let array = value as? [Any] {
+                for child in array {
+                    if let result = panel(in: child) { return result }
+                }
+            }
+            return nil
+        }
+        guard let panel = panel(in: response), let contents = panel["contents"] as? [[String: Any]] else {
+            throw YouTubeMusicSearchError.invalidResponse
+        }
+        var seen: Set<String> = []
+        let songs = contents.compactMap { item -> YouTubeMusicSongResult? in
+            let wrapper = item["playlistPanelVideoWrapperRenderer"] as? [String: Any]
+            let primary = wrapper?["primaryRenderer"] as? [String: Any] ?? item
+            guard let renderer = primary["playlistPanelVideoRenderer"] as? [String: Any],
+                  renderer["unplayableText"] == nil,
+                  let id = renderer["videoId"] as? String, !id.isEmpty,
+                  seen.insert(id).inserted else { return nil }
+            let titleObject = renderer["title"] as? [String: Any]
+            let title = titleObject?["simpleText"] as? String
+                ?? runs(from: titleObject).compactMap { $0["text"] as? String }.joined()
+            guard !title.isEmpty else { return nil }
+            let byline = runs(from: renderer["longBylineText"] ?? renderer["shortBylineText"])
+            let artist = byline.first { run in
+                let endpoint = run["navigationEndpoint"] as? [String: Any]
+                let browse = endpoint?["browseEndpoint"] as? [String: Any]
+                return (browse?["browseId"] as? String)?.hasPrefix("UC") == true
+            }?["text"] as? String
+                ?? byline.first?["text"] as? String ?? "Unknown Artist"
+            return YouTubeMusicSongResult(id: id, title: title, artist: artist,
+                                          artworkURL: largestThumbnailURL(in: renderer["thumbnail"] ?? [:]))
+        }
+        let continuations = panel["continuations"] as? [[String: Any]] ?? []
+        let token = continuations.compactMap { entry -> String? in
+            let next = entry["nextRadioContinuationData"] as? [String: Any]
+                ?? entry["nextContinuationData"] as? [String: Any]
+            return next?["continuation"] as? String
+        }.first
+        return SongRadioPage(songs: songs, continuation: token)
     }
 
     func searchPlaylists(query: String, limit: Int = 60) async throws -> [YouTubeMusicPlaylistResult] {

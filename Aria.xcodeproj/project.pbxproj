@@ -24,6 +24,8 @@
 		4A0001172C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4A0002182C00000000000001 /* Assets.xcassets */; };
 		4A0001182C00000000000001 /* YouTubeMusicSearchClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */; };
 		4A0001192C00000000000001 /* ProvisioningExpiryMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002202C00000000000001 /* ProvisioningExpiryMonitor.swift */; };
+		4A0001202C00000000000001 /* SongRadio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0002212C00000000000001 /* SongRadio.swift */; };
+A0D100000000000000000001 = {isa = PBXBuildFile; fileRef = A0D200000000000000000001; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +48,9 @@
 		4A0002182C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4A0002192C00000000000001 /* YouTubeMusicSearchClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeMusicSearchClient.swift; sourceTree = "<group>"; };
 		4A0002202C00000000000001 /* ProvisioningExpiryMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvisioningExpiryMonitor.swift; sourceTree = "<group>"; };
+		4A0002212C00000000000001 /* SongRadio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongRadio.swift; sourceTree = "<group>"; };
+A0D200000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AriaTests/SongRadioTests.swift; sourceTree = "<group>"; };
+A0D200000000000000000002 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = AriaTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,6 +61,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+A0D300000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -63,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				4A0004022C00000000000001 /* Aria */,
+ A0D200000000000000000001,
 				4A0004032C00000000000001 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -86,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				4A0000012C00000000000001 /* Aria.app */,
+ A0D200000000000000000002,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -102,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				4A0002022C00000000000001 /* Track.swift */,
+				4A0002212C00000000000001 /* SongRadio.swift */,
 				4A0002032C00000000000001 /* Playlist.swift */,
 			);
 			path = Models;
@@ -168,8 +177,15 @@
 			productReference = 4A0000012C00000000000001 /* Aria.app */;
 			productType = "com.apple.product-type.application";
 		};
+A0D400000000000000000001 = {isa = PBXNativeTarget; buildConfigurationList = A0D500000000000000000001; buildPhases = (A0D300000000000000000001, A0D300000000000000000002,); buildRules = (); dependencies = (A0D600000000000000000001,); name = AriaTests; productName = AriaTests; productReference = A0D200000000000000000002; productType = "com.apple.product-type.bundle.unit-test"; };
 /* End PBXNativeTarget section */
 
+/* Begin PBXContainerItemProxy section */
+A0D600000000000000000002 = {isa = PBXContainerItemProxy; containerPortal = 4A0007012C00000000000001; proxyType = 1; remoteGlobalIDString = 4A0005012C00000000000001; remoteInfo = Aria; };
+/* End PBXContainerItemProxy section */
+/* Begin PBXTargetDependency section */
+A0D600000000000000000001 = {isa = PBXTargetDependency; target = 4A0005012C00000000000001; targetProxy = A0D600000000000000000002; };
+/* End PBXTargetDependency section */
 /* Begin PBXProject section */
 		4A0007012C00000000000001 /* Project object */ = {
 			isa = PBXProject;
@@ -196,6 +212,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+ A0D400000000000000000001,
 				4A0005012C00000000000001 /* Aria */,
 			);
 		};
@@ -219,6 +236,7 @@
 			files = (
 				4A0001012C00000000000001 /* AriaApp.swift in Sources */,
 				4A0001022C00000000000001 /* Track.swift in Sources */,
+				4A0001202C00000000000001 /* SongRadio.swift in Sources */,
 				4A0001032C00000000000001 /* Playlist.swift in Sources */,
 				4A0001042C00000000000001 /* SampleCatalog.swift in Sources */,
 				4A0001152C00000000000001 /* AriaServerClient.swift in Sources */,
@@ -236,6 +254,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+A0D300000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A0D100000000000000000001,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
@@ -414,6 +433,8 @@
 			};
 			name = Release;
 		};
+A0D700000000000000000001 = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.tofi.aria.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aria.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aria"; }; name = Debug; };
+A0D700000000000000000002 = {isa = XCBuildConfiguration; buildSettings = { BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = com.tofi.aria.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = "1,2"; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Aria.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Aria"; }; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -435,6 +456,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+A0D500000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (A0D700000000000000000001, A0D700000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = 4A0007012C00000000000001 /* Project object */;

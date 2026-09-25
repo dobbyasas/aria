@@ -1812,6 +1812,7 @@ private struct MobileYouTubeMusicAlbumResultRow: View {
 
 private struct MobileYouTubeMusicSongResultRow: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
     let result: YouTubeMusicSongResult
 
     var body: some View {
@@ -1820,10 +1821,13 @@ private struct MobileYouTubeMusicSongResultRow: View {
             subtitle: result.artist,
             artistName: result.artist,
             artworkURL: result.artworkURL,
-            isDownloaded: player.isSongDownloaded(result)
-        ) {
-            Task { await player.startDownload(result) }
-        }
+            isDownloaded: player.isSongDownloaded(result),
+            onDownload: { Task { await player.startDownload(result) } },
+            onStartRadio: {
+                player.startRadio(result)
+                dismiss()
+            }
+        )
     }
 }
 
@@ -1851,6 +1855,7 @@ private struct MobileYouTubeMusicDownloadResultRow: View {
     let artworkURL: URL?
     let isDownloaded: Bool
     let onDownload: () -> Void
+    var onStartRadio: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1900,6 +1905,18 @@ private struct MobileYouTubeMusicDownloadResultRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.ariaAccent)
                 .accessibilityLabel("Download \(title)")
+            }
+            if let onStartRadio {
+                Menu {
+                    Button(action: onStartRadio) {
+                        Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 44, height: 44)
+                }
+                .foregroundStyle(.ariaTextSecondary)
+                .accessibilityLabel("More options for \(title)")
             }
         }
         .padding(.vertical, 3)

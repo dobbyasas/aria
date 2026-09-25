@@ -2,6 +2,7 @@ import Foundation
 
 struct AriaServerClient {
     var baseURLs: [URL]
+    var session: URLSession = .shared
 
     init(baseURLs: [URL] = Self.defaultBaseURLs) {
         self.baseURLs = Self.unique(baseURLs)
@@ -28,10 +29,6 @@ struct AriaServerClient {
 
         let data = try await sendRequest(to: url, method: "GET")
         let tracks = try JSONDecoder().decode([Track].self, from: data)
-        guard !tracks.isEmpty else {
-            throw AriaServerError.emptyCatalog
-        }
-
         return tracks
     }
 
@@ -148,10 +145,25 @@ struct AriaServerClient {
                 )
                 return try JSONDecoder().decode(AriaDownloadJob.self, from: data)
             } catch {
+                if case AriaServerError.serverMessage(409, _) = error { throw error }
                 failures.append("\(baseURL.absoluteString): \(error.localizedDescription)")
             }
         }
 
+        throw AriaServerError.unreachable(failures)
+    }
+
+    func fetchActiveDownload() async throws -> AriaDownloadJob? {
+        struct Downloads: Decodable { var active: AriaDownloadJob? }
+        var failures: [String] = []
+        for baseURL in baseURLs {
+            do {
+                let data = try await sendRequest(to: downloadsEndpoint(baseURL: baseURL), method: "GET")
+                return try JSONDecoder().decode(Downloads.self, from: data).active
+            } catch {
+                failures.append(error.localizedDescription)
+            }
+        }
         throw AriaServerError.unreachable(failures)
     }
 
@@ -196,6 +208,22 @@ struct AriaServerClient {
         throw AriaServerError.unreachable(failures)
     }
 
+    func deleteTrack(_ track: Track) async throws {
+        var failures: [String] = []
+        for baseURL in baseURLs {
+            do {
+                let endpoint = baseURL.appendingPathComponent("api/tracks")
+                    .appendingPathComponent(track.id.uuidString.lowercased())
+                _ = try await sendRequest(to: endpoint, method: "DELETE")
+                return
+            } catch {
+                if case AriaServerError.serverMessage(409, _) = error { throw error }
+                failures.append(error.localizedDescription)
+            }
+        }
+        throw AriaServerError.unreachable(failures)
+    }
+
     private func sendRequest(
         to url: URL,
         method: String,
@@ -213,7 +241,7 @@ struct AriaServerClient {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
         }
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw AriaServerError.invalidResponse
@@ -387,6 +415,7 @@ struct AriaDownloadJob: Decodable, Identifiable, Equatable {
     var reusedFiles: Int?
     var playlistID: String?
     var playlistTrackCount: Int?
+    var trackID: UUID?
     var error: String?
     var outputTail: [String]
 
