@@ -11,6 +11,7 @@ struct LibraryView: View {
     @State private var playlistSearchText = ""
     @State private var albumSortMode: AlbumSortMode = .title
     @State private var isDownloadSheetPresented = false
+    @State private var isRadioCleanupPresented = false
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
@@ -19,6 +20,7 @@ struct LibraryView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     header
                     sectionPicker
+                    radioDownloads
                     librarySearchField
                     sectionContent
 
@@ -45,6 +47,42 @@ struct LibraryView: View {
         .sheet(isPresented: $isDownloadSheetPresented) {
             MobileDownloadMusicSheet()
                 .environmentObject(player)
+        }
+        .confirmationDialog("Delete all radio downloads?", isPresented: $isRadioCleanupPresented, titleVisibility: .visible) {
+            Button("Delete All Radio Downloads", role: .destructive) {
+                Task { await player.deleteAllRadioDownloads() }
+            }
+        } message: {
+            Text("This stops radio and deletes songs downloaded by radio from the shared server and playlists. Songs you already had before radio are kept.")
+        }
+    }
+
+    @ViewBuilder
+    private var radioDownloads: some View {
+        if player.radioDownloadCount > 0 || player.isRadioActive || player.isDeletingRadioDownloads || player.radioCleanupError != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Radio downloads · \(player.radioDownloadCount)", systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.ariaTextSecondary)
+                    Spacer()
+                    if player.isDeletingRadioDownloads {
+                        ProgressView()
+                            .accessibilityLabel("Deleting radio downloads")
+                    } else {
+                        Button("Delete all", role: .destructive) { isRadioCleanupPresented = true }
+                            .font(.subheadline.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
+                }
+                if player.isDeletingRadioDownloads {
+                    Text("Clearing radio downloads after any active download finishes…")
+                        .font(.caption)
+                        .foregroundStyle(.ariaTextSecondary)
+                } else if let error = player.radioCleanupError {
+                    Text(error).font(.caption).foregroundStyle(.ariaTextSecondary)
+                }
+            }
         }
     }
 

@@ -224,6 +224,20 @@ struct AriaServerClient {
         throw AriaServerError.unreachable(failures)
     }
 
+    func deleteRadioDownloads() async throws -> RadioDownloadsDeletionResult {
+        var failures: [String] = []
+        for baseURL in baseURLs {
+            do {
+                let data = try await sendRequest(to: baseURL.appendingPathComponent("api/radio-downloads"), method: "DELETE")
+                return try JSONDecoder().decode(RadioDownloadsDeletionResult.self, from: data)
+            } catch {
+                if case AriaServerError.serverMessage(409, _) = error { throw error }
+                failures.append(error.localizedDescription)
+            }
+        }
+        throw AriaServerError.unreachable(failures)
+    }
+
     private func sendRequest(
         to url: URL,
         method: String,
@@ -398,6 +412,13 @@ struct AriaDownloadRequest: Encodable {
     var albumArtist: String
     var year: String
     var kind: String = "album"
+    var source: String = "manual"
+}
+
+struct RadioDownloadsDeletionResult: Decodable {
+    var deletedFiles: Int
+    var deletedTrackIDs: [UUID]
+    var updatedPlaylists: Int
 }
 
 struct AriaDownloadJob: Decodable, Identifiable, Equatable {

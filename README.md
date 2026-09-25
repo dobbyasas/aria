@@ -28,6 +28,13 @@ an excluded song allows that seed again. **Stop radio** stops adding songs;
 already prepared songs remain playable, and an accepted server download may
 finish. Choosing another song or playlist stops the previous radio session.
 
+Songs newly downloaded by radio carry a persistent server-side
+`isRadioDownload` flag. The Library shows their count with **Delete all** to
+clear those downloads together, including their shared playlist references.
+This stops radio and waits for any active download to finish. Existing library
+songs reused by radio remain unflagged and are kept. Bulk cleanup does not
+exclude the deleted songs from future radio recommendations.
+
 Radio uses YouTube Music's anonymous radio queue, so its recommendations can
 differ from those of a signed-in YouTube account. The web endpoint can change;
 connection and recommendation errors appear in the player with a retry action.

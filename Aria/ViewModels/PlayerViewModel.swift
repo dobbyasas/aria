@@ -45,6 +45,8 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var isWaitingForRadioTrack = false
     @Published private(set) var radioDeletionError: String?
     @Published private(set) var pendingRadioDeletionCount = 0
+    @Published private(set) var isDeletingRadioDownloads = false
+    @Published private(set) var radioCleanupError: String?
     @Published var currentTrack: Track?
     @Published var isPlaying = false
     @Published var isShuffleEnabled = false
@@ -328,7 +330,7 @@ final class PlayerViewModel: ObservableObject {
         year: String,
         kind: String = "album"
     ) async {
-        guard !isDownloadStarting, downloadJob?.isActive != true else { return }
+        guard !isDownloadStarting, downloadJob?.isActive != true, !isDeletingRadioDownloads else { return }
 
         let request = AriaDownloadRequest(
             link: link.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -534,8 +536,48 @@ final class PlayerViewModel: ObservableObject {
     }
 
     var isRadioActive: Bool { radioSessionID != nil }
+    var radioDownloadCount: Int { catalog.filter { $0.isRadioDownload == true }.count }
+
+    func deleteAllRadioDownloads() async {
+        guard !isDeletingRadioDownloads else { return }
+        isDeletingRadioDownloads = true
+        radioCleanupError = nil
+        let finishingRadioTask = radioTask
+        stopRadio()
+        defer { isDeletingRadioDownloads = false }
+        // Let a cancelled download request settle before the server checks for
+        // an active job, so an accepted song is included in this cleanup.
+        await finishingRadioTask?.value
+        let deadline = Date().addingTimeInterval(15 * 60)
+        do {
+            while true {
+                try Task.checkCancellation()
+                do {
+                    let result = try await serverClient.deleteRadioDownloads()
+                    let deletedIDs = Set(result.deletedTrackIDs)
+                    pendingRadioDeletions.removeAll { deletedIDs.contains($0.id) }
+                    persistRadioDeletions()
+                    for index in playlists.indices {
+                        playlists[index].tracks.removeAll { deletedIDs.contains($0.id) }
+                    }
+                    replaceCatalog(with: catalog.filter { !deletedIDs.contains($0.id) })
+                    await refreshCatalog()
+                    publishQueueNotice(message: "Deleted \(result.deletedFiles) radio downloads", symbolName: "trash.fill")
+                    return
+                } catch AriaServerError.serverMessage(409, _) {
+                    guard Date() < deadline else {
+                        throw AriaServerError.serverMessage(409, "The server is still downloading. Try deleting radio downloads again when it finishes.")
+                    }
+                    try await Task.sleep(for: .seconds(2))
+                }
+            }
+        } catch {
+            radioCleanupError = error.localizedDescription
+        }
+    }
 
     func startRadio(_ track: Track) {
+        guard !isDeletingRadioDownloads else { return }
         beginRadio(title: track.title)
         allowRadioSeed(identity: track.radioIdentity, videoID: track.youtubeVideoID)
         radioSeedTrack = track
@@ -547,6 +589,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func startRadio(_ song: YouTubeMusicSongResult) {
+        guard !isDeletingRadioDownloads else { return }
         beginRadio(title: song.title)
         allowRadioSeed(identity: song.radioIdentity, videoID: song.id)
         radioSeed = song
@@ -818,7 +861,7 @@ final class PlayerViewModel: ObservableObject {
             if let track = song.downloadedTrack(in: catalog) { return track }
             do {
                 var job = try await serverClient.startDownload(AriaDownloadRequest(
-                    link: song.downloadLink, album: song.title, albumArtist: song.artist, year: "", kind: "song"
+                    link: song.downloadLink, album: song.title, albumArtist: song.artist, year: "", kind: "song", source: "radio"
                 ))
                 guard radioSessionID == id, !Task.isCancelled else {
                     downloadJob = job

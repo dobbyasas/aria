@@ -44,6 +44,8 @@ final class SongRadioTests: XCTestCase {
     private var serverTracks: [Track] = []
     private var downloadTracks: [Track] = []
     private var downloadedLinks: [String] = []
+    private var downloadSources: [String] = []
+    private var bulkDeleteRequests = 0
     private var deletedIDs: [String] = []
     private var deleteBusyCount = 0
     private var deleteFails = false
@@ -102,7 +104,11 @@ final class SongRadioTests: XCTestCase {
                 }
                 let json = try JSONSerialization.jsonObject(with: body!) as! [String: String]
                 downloadedLinks.append(json["link"]!)
-                if !failedDownloadTitles.contains(json["album"]!), let track = downloadTracks.first(where: { $0.title == json["album"] }) { serverTracks.append(track) }
+                downloadSources.append(json["source"] ?? "manual")
+                if !failedDownloadTitles.contains(json["album"]!), var track = downloadTracks.first(where: { $0.title == json["album"] }) {
+                    track.isRadioDownload = json["source"] == "radio"
+                    serverTracks.append(track)
+                }
                 var job: [String: Any] = ["id": "job", "status": failedDownloadTitles.contains(json["album"]!) ? "failed" : "succeeded", "phase": "Done", "message": "Done",
                     "progress": 1, "album": json["album"]!, "albumArtist": "Artist", "year": "", "filesStarted": 1, "outputTail": []]
                 if let reusedTrackID { job["trackID"] = reusedTrackID.uuidString }
@@ -112,6 +118,13 @@ final class SongRadioTests: XCTestCase {
                 if deleteBusyCount > 0 {
                     deleteBusyCount -= 1
                     return (409, Data("{\"error\":\"Download in progress\"}".utf8))
+                }
+                if path == "/api/radio-downloads" {
+                    bulkDeleteRequests += 1
+                    let ids = serverTracks.filter { $0.isRadioDownload == true }.map { $0.id.uuidString.lowercased() }
+                    serverTracks.removeAll { $0.isRadioDownload == true }
+                    deletedIDs.append(contentsOf: ids)
+                    return (200, try JSONSerialization.data(withJSONObject: ["deletedFiles": ids.count, "deletedTrackIDs": ids, "updatedPlaylists": 0]))
                 }
                 let id = String(path.split(separator: "/").last!)
                 deletedIDs.append(id)
@@ -160,6 +173,8 @@ final class SongRadioTests: XCTestCase {
         try await eventually { player.queue.count == 4 }
         XCTAssertEqual(player.currentTrack?.id, tracks[0].id)
         XCTAssertEqual(downloadedLinks.count, 4)
+        XCTAssertEqual(downloadSources, Array(repeating: "radio", count: 4))
+        XCTAssertEqual(player.radioDownloadCount, 4)
         XCTAssertTrue(player.isPlaying)
     }
 
@@ -226,6 +241,60 @@ final class SongRadioTests: XCTestCase {
         try await eventually { player.queue.count == 4 }
         XCTAssertFalse(player.queue.contains { $0.id == tracks[1].id })
         XCTAssertTrue(downloadedLinks.isEmpty)
+    }
+
+    func testBulkDeleteRemovesOnlyFlaggedTracksAndPreservesOrdinaryPlayback() async throws {
+        var tracks = (0..<3).map(track)
+        tracks[1].isRadioDownload = true
+        tracks[2].isRadioDownload = true
+        let player = makePlayer(tracks: tracks, provider: RadioProvider(tracks.map { song($0) }))
+        player.play(tracks[0], from: tracks)
+        player.elapsed = 31
+        XCTAssertEqual(player.radioDownloadCount, 2)
+        await player.deleteAllRadioDownloads()
+        XCTAssertEqual(bulkDeleteRequests, 1)
+        XCTAssertEqual(Set(deletedIDs), Set(tracks.dropFirst().map { $0.id.uuidString.lowercased() }))
+        XCTAssertEqual(player.queue.map(\.id), [tracks[0].id])
+        XCTAssertEqual(player.currentTrack?.id, tracks[0].id)
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertGreaterThanOrEqual(player.elapsed, 31)
+        XCTAssertEqual(player.radioDownloadCount, 0)
+        XCTAssertNil(player.radioCleanupError)
+        XCTAssertNil(defaults.stringArray(forKey: "aria.radio.excludedSongs"))
+    }
+
+    func testBulkDeleteStopsRadioAndWaitsForDownloader() async throws {
+        var tracks = (0..<6).map(track)
+        tracks[0].isRadioDownload = true
+        let player = makePlayer(tracks: tracks, provider: RadioProvider(tracks.map { song($0) }))
+        player.startRadio(tracks[0])
+        try await eventually { player.queue.count == 4 }
+        deleteBusyCount = 1
+        let cleanup = Task { await player.deleteAllRadioDownloads() }
+        try await eventually { player.isDeletingRadioDownloads }
+        XCTAssertFalse(player.isRadioActive)
+        player.startRadio(tracks[1])
+        XCTAssertFalse(player.isRadioActive)
+        await cleanup.value
+        XCTAssertFalse(player.isDeletingRadioDownloads)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.radioDownloadCount, 0)
+        XCTAssertFalse(player.catalog.contains { $0.id == tracks[0].id })
+    }
+
+    func testBulkDeleteFailureKeepsFlagsAndOffersRetry() async throws {
+        var tracks = [track(0)]
+        tracks[0].isRadioDownload = true
+        let player = makePlayer(tracks: tracks, provider: RadioProvider(tracks.map { song($0) }))
+        deleteFails = true
+        await player.deleteAllRadioDownloads()
+        XCTAssertNotNil(player.radioCleanupError)
+        XCTAssertEqual(player.radioDownloadCount, 1)
+        XCTAssertFalse(player.isDeletingRadioDownloads)
+        deleteFails = false
+        await player.deleteAllRadioDownloads()
+        XCTAssertNil(player.radioCleanupError)
+        XCTAssertEqual(player.radioDownloadCount, 0)
     }
 
     func testReusedDownloadTrackIDHandlesDifferentSavedMetadataAndDislike() async throws {
