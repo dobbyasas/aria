@@ -4,7 +4,7 @@ import SwiftUI
 enum AriaRelease {
     static let version = Bundle.main.object(
         forInfoDictionaryKey: "CFBundleShortVersionString"
-    ) as? String ?? "1.22.6"
+    ) as? String ?? "1.23.0"
 
     static var displayText: String {
         "Version \(version)"

@@ -75,6 +75,8 @@ struct NowPlayingView: View {
 
                 mainControls
 
+                radioControls
+
                 queuePreview
             }
             .padding(.horizontal, isTablet ? 32 : 24)
@@ -96,6 +98,8 @@ struct NowPlayingView: View {
                 progressSection(for: track)
 
                 mainControls
+
+                radioControls
             }
             .frame(maxWidth: 510)
 
@@ -149,7 +153,7 @@ struct NowPlayingView: View {
                         .font(.headline.weight(.semibold))
                         .foregroundStyle(.ariaTextPrimary)
 
-                    Text(track.album)
+                    Text(player.radioTitle ?? track.album)
                         .font(.caption)
                         .foregroundStyle(.ariaTextSecondary)
                         .lineLimit(1)
@@ -371,6 +375,8 @@ struct NowPlayingView: View {
             }
             .buttonStyle(AriaPressButtonStyle())
             .accessibilityLabel(player.isShuffleEnabled ? "Turn shuffle off" : "Turn shuffle on")
+            .disabled(player.isRadioActive)
+            .opacity(player.isRadioActive ? 0.35 : 1)
 
             Button {
                 player.previous()
@@ -419,6 +425,67 @@ struct NowPlayingView: View {
             }
             .buttonStyle(AriaPressButtonStyle())
             .accessibilityLabel(player.repeatMode.title)
+            .disabled(player.isRadioActive)
+            .opacity(player.isRadioActive ? 0.35 : 1)
+        }
+    }
+
+    private var radioControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if player.isRadioActive {
+                HStack {
+                    Button {
+                        player.removeCurrentSongFromRadio()
+                    } label: {
+                        Label("Remove song", systemImage: "trash")
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(player.currentTrack == nil || player.isWaitingForRadioTrack)
+                    .accessibilityHint("Skips, excludes from future radio, and deletes the song from your shared library.")
+                    Spacer()
+                    Button("Stop radio") { player.stopRadio() }
+                        .frame(minHeight: 44)
+                }
+                .font(.subheadline.weight(.semibold))
+                .tint(.ariaAccent)
+
+                Text("Remove skips, excludes, and deletes the download.")
+                    .font(.caption2)
+                    .foregroundStyle(.ariaTextSecondary)
+
+                if let error = player.radioErrorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.ariaTextSecondary)
+                    Button("Try again") { player.retryRadio() }
+                        .font(.subheadline.weight(.semibold))
+                        .tint(.ariaAccent)
+                } else if let status = player.radioStatusMessage {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(status).font(.caption)
+                    }
+                    .foregroundStyle(.ariaTextSecondary)
+                }
+            } else if let track = player.currentTrack {
+                Button {
+                    player.startRadio(track)
+                } label: {
+                    Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .tint(.ariaAccent)
+            }
+            if let error = player.radioDeletionError {
+                Text(error).font(.caption).foregroundStyle(.ariaTextSecondary)
+                Button("Retry deletion") { player.retryRadioDeletions() }
+                    .tint(.ariaAccent)
+            } else if player.pendingRadioDeletionCount > 0 {
+                Text("Deleting \(player.pendingRadioDeletionCount) skipped song(s)…")
+                    .font(.caption)
+                    .foregroundStyle(.ariaTextSecondary)
+            }
         }
     }
 
@@ -427,7 +494,7 @@ struct NowPlayingView: View {
             SectionTitle(title: "Up next")
 
             if player.upNextPreview.isEmpty {
-                Text("End of queue")
+                Text(player.isRadioActive ? "More radio songs are on the way" : "End of queue")
                     .font(.subheadline)
                     .foregroundStyle(.ariaTextSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -477,7 +544,24 @@ struct NowPlayingView: View {
         ZStack {
             Color.ariaBackground.ignoresSafeArea()
 
-            if player.isCatalogLoading {
+            if player.isRadioActive {
+                VStack(spacing: 20) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 44))
+                        .foregroundStyle(.ariaAccent)
+                    Text(player.radioTitle ?? "Radio")
+                        .font(.title2.bold())
+                        .foregroundStyle(.ariaTextPrimary)
+                        .multilineTextAlignment(.center)
+                    radioControls
+                    Button(player.isPlaying ? "Pause" : "Play") { player.playPause() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.ariaAccent)
+                    Button("Open library") { player.hidePlayer() }
+                        .tint(.ariaAccent)
+                }
+                .padding(24)
+            } else if player.isCatalogLoading {
                 AriaLoadingIndicator()
             } else {
                 VStack(spacing: 16) {
@@ -488,6 +572,7 @@ struct NowPlayingView: View {
                     Text("Choose a song to begin")
                         .font(.title2.bold())
                         .foregroundStyle(.ariaTextPrimary)
+                    radioControls
                     Button("Open library") {
                         player.hidePlayer()
                     }

@@ -11,6 +11,7 @@ struct LibraryView: View {
     @State private var playlistSearchText = ""
     @State private var albumSortMode: AlbumSortMode = .title
     @State private var isDownloadSheetPresented = false
+    @State private var isRadioCleanupPresented = false
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
@@ -19,6 +20,7 @@ struct LibraryView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     header
                     sectionPicker
+                    radioDownloads
                     librarySearchField
                     sectionContent
 
@@ -45,6 +47,42 @@ struct LibraryView: View {
         .sheet(isPresented: $isDownloadSheetPresented) {
             MobileDownloadMusicSheet()
                 .environmentObject(player)
+        }
+        .confirmationDialog("Delete all radio downloads?", isPresented: $isRadioCleanupPresented, titleVisibility: .visible) {
+            Button("Delete All Radio Downloads", role: .destructive) {
+                Task { await player.deleteAllRadioDownloads() }
+            }
+        } message: {
+            Text("This stops radio and deletes songs downloaded by radio from the shared server and playlists. Songs you already had before radio are kept.")
+        }
+    }
+
+    @ViewBuilder
+    private var radioDownloads: some View {
+        if player.radioDownloadCount > 0 || player.isRadioActive || player.isDeletingRadioDownloads || player.radioCleanupError != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Radio downloads · \(player.radioDownloadCount)", systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.subheadline)
+                        .foregroundStyle(.ariaTextSecondary)
+                    Spacer()
+                    if player.isDeletingRadioDownloads {
+                        ProgressView()
+                            .accessibilityLabel("Deleting radio downloads")
+                    } else {
+                        Button("Delete all", role: .destructive) { isRadioCleanupPresented = true }
+                            .font(.subheadline.weight(.semibold))
+                            .frame(minHeight: 44)
+                    }
+                }
+                if player.isDeletingRadioDownloads {
+                    Text("Clearing radio downloads after any active download finishes…")
+                        .font(.caption)
+                        .foregroundStyle(.ariaTextSecondary)
+                } else if let error = player.radioCleanupError {
+                    Text(error).font(.caption).foregroundStyle(.ariaTextSecondary)
+                }
+            }
         }
     }
 
@@ -1812,6 +1850,7 @@ private struct MobileYouTubeMusicAlbumResultRow: View {
 
 private struct MobileYouTubeMusicSongResultRow: View {
     @EnvironmentObject private var player: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
     let result: YouTubeMusicSongResult
 
     var body: some View {
@@ -1820,10 +1859,13 @@ private struct MobileYouTubeMusicSongResultRow: View {
             subtitle: result.artist,
             artistName: result.artist,
             artworkURL: result.artworkURL,
-            isDownloaded: player.isSongDownloaded(result)
-        ) {
-            Task { await player.startDownload(result) }
-        }
+            isDownloaded: player.isSongDownloaded(result),
+            onDownload: { Task { await player.startDownload(result) } },
+            onStartRadio: {
+                player.startRadio(result)
+                dismiss()
+            }
+        )
     }
 }
 
@@ -1851,6 +1893,7 @@ private struct MobileYouTubeMusicDownloadResultRow: View {
     let artworkURL: URL?
     let isDownloaded: Bool
     let onDownload: () -> Void
+    var onStartRadio: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1900,6 +1943,18 @@ private struct MobileYouTubeMusicDownloadResultRow: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.ariaAccent)
                 .accessibilityLabel("Download \(title)")
+            }
+            if let onStartRadio {
+                Menu {
+                    Button(action: onStartRadio) {
+                        Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .frame(width: 44, height: 44)
+                }
+                .foregroundStyle(.ariaTextSecondary)
+                .accessibilityLabel("More options for \(title)")
             }
         }
         .padding(.vertical, 3)

@@ -39,6 +39,14 @@ final class PlayerViewModel: ObservableObject {
     @Published private(set) var youtubeMusicSearchError: String?
     @Published var presentedArtist: ArtistSelection?
     @Published private(set) var queueNotice: QueueNotice?
+    @Published private(set) var radioTitle: String?
+    @Published private(set) var radioStatusMessage: String?
+    @Published private(set) var radioErrorMessage: String?
+    @Published private(set) var isWaitingForRadioTrack = false
+    @Published private(set) var radioDeletionError: String?
+    @Published private(set) var pendingRadioDeletionCount = 0
+    @Published private(set) var isDeletingRadioDownloads = false
+    @Published private(set) var radioCleanupError: String?
     @Published var currentTrack: Track?
     @Published var isPlaying = false
     @Published var isShuffleEnabled = false
@@ -65,6 +73,22 @@ final class PlayerViewModel: ObservableObject {
     private let serverClient: AriaServerClient
     private let playlistStore: PlaylistStore
     private let youtubeMusicSearchClient = YouTubeMusicSearchClient()
+    private let radioClient: any SongRadioProviding
+    private let radioDefaults: UserDefaults
+    private var radioTask: Task<Void, Never>?
+    private var radioSessionID: UUID?
+    private var radioSeed: YouTubeMusicSongResult?
+    private var radioSeedTrack: Track?
+    private var radioHasStartedPlayback = false
+    private var radioSeedWasQueued = false
+    private var radioSongsByTrackID: [UUID: YouTubeMusicSongResult] = [:]
+    private var radioBuffer = SongRadioBuffer()
+    private var radioDownloadJobID: String?
+    private var radioExcludedKeys: Set<String>
+    private static let radioExclusionsKey = "aria.radio.excludedSongs"
+    private static let radioDeletionsKey = "aria.radio.pendingDeletions"
+    private var pendingRadioDeletions: [Track]
+    private var radioDeletionTask: Task<Void, Never>?
     private var audioPlayer: AVPlayer?
     private var endObserver: NSObjectProtocol?
     private var catalogTask: Task<Void, Never>?
@@ -99,7 +123,9 @@ final class PlayerViewModel: ObservableObject {
         serverClient: AriaServerClient = AriaServerClient(),
         playlistStore: PlaylistStore = PlaylistStore(),
         automaticallyLoadsCatalog: Bool = true,
-        automaticallySyncsPlayback: Bool = true
+        automaticallySyncsPlayback: Bool = true,
+        radioClient: any SongRadioProviding = YouTubeMusicSearchClient(),
+        radioDefaults: UserDefaults = .standard
     ) {
         self.catalog = catalog
         self.albums = Self.albums(from: catalog)
@@ -109,15 +135,23 @@ final class PlayerViewModel: ObservableObject {
         self.currentTrack = catalog.first
         self.serverClient = serverClient
         self.playlistStore = playlistStore
+        self.radioClient = radioClient
+        self.radioDefaults = radioDefaults
+        self.radioExcludedKeys = Set(radioDefaults.stringArray(forKey: Self.radioExclusionsKey) ?? [])
+        self.pendingRadioDeletions = radioDefaults.data(forKey: Self.radioDeletionsKey)
+            .flatMap { try? JSONDecoder().decode([Track].self, from: $0) } ?? []
+        self.pendingRadioDeletionCount = pendingRadioDeletions.count
         self.isCatalogLoading = automaticallyLoadsCatalog
+        if !automaticallySyncsPlayback { self.playbackSessionRole = .host }
 
         configureAudioSession()
         configureRemoteCommands()
         updateNowPlayingInfo()
 
-        Task {
-            await youtubeMusicSearchClient.prepare()
+        if automaticallyLoadsCatalog || automaticallySyncsPlayback {
+            Task { await youtubeMusicSearchClient.prepare() }
         }
+        retryRadioDeletions()
 
         if automaticallyLoadsCatalog {
             catalogTask = Task { [weak self] in
@@ -140,6 +174,8 @@ final class PlayerViewModel: ObservableObject {
         queueNoticeTask?.cancel()
         playbackSyncTask?.cancel()
         volumeCommandTask?.cancel()
+        radioTask?.cancel()
+        radioDeletionTask?.cancel()
     }
 
     var isRemoteController: Bool {
@@ -196,6 +232,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     var canSkipToNextTrack: Bool {
+        if isRadioActive { return true }
         guard let currentTrack else { return false }
         guard let index = queue.firstIndex(of: currentTrack) else {
             return queue.count > 1
@@ -293,7 +330,7 @@ final class PlayerViewModel: ObservableObject {
         year: String,
         kind: String = "album"
     ) async {
-        guard !isDownloadStarting, downloadJob?.isActive != true else { return }
+        guard !isDownloadStarting, downloadJob?.isActive != true, !isDeletingRadioDownloads else { return }
 
         let request = AriaDownloadRequest(
             link: link.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -410,12 +447,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func isSongDownloaded(_ result: YouTubeMusicSongResult) -> Bool {
-        let title = Self.normalizedWords(in: result.title).joined(separator: " ")
-        let artist = Self.canonicalArtistName(result.artist)
-        return catalog.contains { track in
-            Self.normalizedWords(in: track.title).joined(separator: " ") == title
-                && Self.canonicalArtistName(track.artist) == artist
-        }
+        result.downloadedTrack(in: catalog) != nil
     }
 
     func presentArtist(named name: String) {
@@ -503,13 +535,389 @@ final class PlayerViewModel: ObservableObject {
             .filter { !$0.isEmpty }
     }
 
+    var isRadioActive: Bool { radioSessionID != nil }
+    var radioDownloadCount: Int { catalog.filter { $0.isRadioDownload == true }.count }
+
+    func deleteAllRadioDownloads() async {
+        guard !isDeletingRadioDownloads else { return }
+        isDeletingRadioDownloads = true
+        radioCleanupError = nil
+        let finishingRadioTask = radioTask
+        stopRadio()
+        defer { isDeletingRadioDownloads = false }
+        // Let a cancelled download request settle before the server checks for
+        // an active job, so an accepted song is included in this cleanup.
+        await finishingRadioTask?.value
+        let deadline = Date().addingTimeInterval(15 * 60)
+        do {
+            while true {
+                try Task.checkCancellation()
+                do {
+                    let result = try await serverClient.deleteRadioDownloads()
+                    let deletedIDs = Set(result.deletedTrackIDs)
+                    pendingRadioDeletions.removeAll { deletedIDs.contains($0.id) }
+                    persistRadioDeletions()
+                    for index in playlists.indices {
+                        playlists[index].tracks.removeAll { deletedIDs.contains($0.id) }
+                    }
+                    replaceCatalog(with: catalog.filter { !deletedIDs.contains($0.id) })
+                    await refreshCatalog()
+                    publishQueueNotice(message: "Deleted \(result.deletedFiles) radio downloads", symbolName: "trash.fill")
+                    return
+                } catch AriaServerError.serverMessage(409, _) {
+                    guard Date() < deadline else {
+                        throw AriaServerError.serverMessage(409, "The server is still downloading. Try deleting radio downloads again when it finishes.")
+                    }
+                    try await Task.sleep(for: .seconds(2))
+                }
+            }
+        } catch {
+            radioCleanupError = error.localizedDescription
+        }
+    }
+
+    func startRadio(_ track: Track) {
+        guard !isDeletingRadioDownloads else { return }
+        beginRadio(title: track.title)
+        allowRadioSeed(identity: track.radioIdentity, videoID: track.youtubeVideoID)
+        radioSeedTrack = track
+        if let id = track.youtubeVideoID {
+            radioSeed = YouTubeMusicSongResult(id: id, title: track.title, artist: track.artist,
+                                              artworkURL: track.artworkURL)
+        }
+        refillRadio()
+    }
+
+    func startRadio(_ song: YouTubeMusicSongResult) {
+        guard !isDeletingRadioDownloads else { return }
+        beginRadio(title: song.title)
+        allowRadioSeed(identity: song.radioIdentity, videoID: song.id)
+        radioSeed = song
+        radioSeedTrack = song.downloadedTrack(in: catalog)
+        refillRadio()
+    }
+
+    private func allowRadioSeed(identity: String, videoID: String?) {
+        // Only the explicit Start Radio action may undo a previous exclusion.
+        radioExcludedKeys.remove(identity)
+        if let videoID { radioExcludedKeys.remove("video:\(videoID)") }
+        radioDefaults.set(Array(radioExcludedKeys).sorted(), forKey: Self.radioExclusionsKey)
+    }
+
+    private func beginRadio(title: String) {
+        stopRadio()
+        // Start locally even if the initial shared-session election is still
+        // pending. Late responses for the previous session are ignored by sync.
+        if playbackSessionRole != .host {
+            switchPlaybackSession(to: UUID().uuidString.lowercased())
+            publishQueueNotice(message: "Radio will play on this device", symbolName: "antenna.radiowaves.left.and.right")
+        }
+        radioSessionID = UUID()
+        radioTitle = "\(title) Radio"
+        radioHasStartedPlayback = false
+        radioSeedWasQueued = false
+        radioBuffer = SongRadioBuffer()
+        radioSongsByTrackID = [:]
+        isShuffleEnabled = false
+        repeatMode = .off
+        audioPlayer?.pause()
+        removeEndObserver()
+        currentTrack = nil
+        queue = []
+        manuallyQueuedTrackIDs.removeAll()
+        elapsed = 0
+        isPlaying = true
+        isWaitingForRadioTrack = true
+        radioStatusMessage = "Starting radio…"
+        dismissArtist()
+        showPlayer()
+    }
+
+    func stopRadio() {
+        radioSessionID = nil
+        radioTask?.cancel()
+        radioTask = nil
+        if let id = radioDownloadJobID {
+            // The server may finish an already accepted download after Stop.
+            // Keep its normal progress UI alive, but never enqueue it into a new session.
+            beginDownloadPolling(id: id)
+        }
+        radioDownloadJobID = nil
+        radioSeed = nil
+        radioSeedTrack = nil
+        radioBuffer = SongRadioBuffer()
+        radioTitle = nil
+        radioStatusMessage = nil
+        radioErrorMessage = nil
+        if isWaitingForRadioTrack { isPlaying = false }
+        isWaitingForRadioTrack = false
+    }
+
+    func retryRadio() {
+        guard isRadioActive else { return }
+        radioErrorMessage = nil
+        if radioBuffer.pending.isEmpty { radioBuffer.continuation = nil }
+        refillRadio()
+    }
+
+    func removeCurrentSongFromRadio() {
+        guard isRadioActive, let track = currentTrack else { return }
+        var keys: Set<String> = [track.radioIdentity]
+        if let id = track.youtubeVideoID { keys.insert("video:\(id)") }
+        if let song = radioSongsByTrackID[track.id] {
+            keys.insert(song.radioIdentity)
+            keys.insert("video:\(song.id)")
+        }
+        radioExcludedKeys.formUnion(keys)
+        radioDefaults.set(Array(radioExcludedKeys).sorted(), forKey: Self.radioExclusionsKey)
+        radioBuffer.exclude(keys)
+        if !pendingRadioDeletions.contains(where: { $0.id == track.id }) {
+            pendingRadioDeletions.append(track)
+            persistRadioDeletions()
+        }
+        let upcoming = upNext.filter { !keys.contains($0.radioIdentity) }
+        audioPlayer?.pause()
+        removeEndObserver()
+        queue = upcoming
+        currentTrack = nil
+        listeningHistory.removeAll { $0.id == track.id }
+        elapsed = 0
+        isWaitingForRadioTrack = true
+        isPlaying = true
+        playPreparedRadioTrackIfNeeded()
+        retryRadioDeletions()
+        refillRadio()
+        publishQueueNotice(message: "Skipped · deleting download", symbolName: "trash.fill")
+    }
+
+    private func persistRadioDeletions() {
+        pendingRadioDeletionCount = pendingRadioDeletions.count
+        if let data = try? JSONEncoder().encode(pendingRadioDeletions) {
+            radioDefaults.set(data, forKey: Self.radioDeletionsKey)
+        }
+    }
+
+    func retryRadioDeletions() {
+        guard radioDeletionTask == nil, !pendingRadioDeletions.isEmpty else { return }
+        radioDeletionError = nil
+        radioDeletionTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.radioDeletionTask = nil }
+            let deadline = Date().addingTimeInterval(15 * 60)
+            while let track = self.pendingRadioDeletions.first, !Task.isCancelled {
+                do {
+                    try await self.serverClient.deleteTrack(track)
+                    self.pendingRadioDeletions.removeAll { $0.id == track.id }
+                    self.persistRadioDeletions()
+                    for index in self.playlists.indices {
+                        self.playlists[index].tracks.removeAll { $0.id == track.id }
+                    }
+                    self.replaceCatalog(with: self.catalog.filter { $0.id != track.id })
+                    self.publishQueueNotice(message: "Deleted \(track.title)", symbolName: "trash.fill")
+                } catch AriaServerError.serverMessage(409, _) {
+                    guard Date() < deadline else {
+                        self.radioDeletionError = "Song skipped. The server is still busy downloading; retry deletion when it finishes."
+                        return
+                    }
+                    do { try await Task.sleep(for: .seconds(2)) } catch { return }
+                } catch {
+                    self.radioDeletionError = "Song skipped, but its download could not be deleted. \(error.localizedDescription)"
+                    return
+                }
+            }
+        }
+    }
+
+    private func checkRadioSession(_ id: UUID) throws {
+        try Task.checkCancellation()
+        guard radioSessionID == id else { throw CancellationError() }
+    }
+
+    private func refillRadio() {
+        guard let id = radioSessionID, radioTask == nil else { return }
+        radioTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.radioSessionID == id {
+                    self.radioTask = nil
+                    self.radioStatusMessage = nil
+                }
+            }
+            do {
+                try await self.prepareRadioSeed(sessionID: id)
+                var emptyPages = 0
+                var failedDownloads = 0
+                while self.remainingUpNextCount < 3 {
+                    try self.checkRadioSession(id)
+                    if self.radioBuffer.pending.isEmpty {
+                        self.radioStatusMessage = "Finding songs for your radio…"
+                        let page = try await self.radioClient.radio(
+                            seedVideoID: self.radioSeed!.id,
+                            continuation: self.radioBuffer.continuation
+                        )
+                        try self.checkRadioSession(id)
+                        self.radioBuffer.append(page, excluding: self.radioExcludedKeys)
+                        if self.radioBuffer.pending.isEmpty {
+                            emptyPages += 1
+                            guard emptyPages < 3 else { throw SongRadioError.noMoreSongs }
+                            continue
+                        }
+                        emptyPages = 0
+                    }
+                    guard let song = self.radioBuffer.pending.first else { continue }
+                    do {
+                        let track = try await self.prepareRadioTrack(song, sessionID: id)
+                        try self.checkRadioSession(id)
+                        self.radioSongsByTrackID[track.id] = song
+                        // A dislike can remove the candidate during an awaited download.
+                        if self.radioBuffer.pending.first?.id == song.id { self.radioBuffer.removeFirst() }
+                        guard !self.radioExcludedKeys.contains(song.radioIdentity),
+                              !self.radioExcludedKeys.contains("video:\(song.id)"),
+                              !self.radioExcludedKeys.contains(track.radioIdentity),
+                              !self.queue.contains(where: { $0.id == track.id }) else { continue }
+                        self.queue.append(track)
+                        self.playPreparedRadioTrackIfNeeded()
+                        self.updateRemoteCommandAvailability()
+                    } catch SongRadioError.downloadFailed(let message) {
+                        try self.checkRadioSession(id)
+                        if self.radioBuffer.pending.first?.id == song.id { self.radioBuffer.removeFirst() }
+                        failedDownloads += 1
+                        self.publishQueueNotice(message: "Skipped unavailable song: \(song.title)", symbolName: "exclamationmark.circle")
+                        if failedDownloads >= 3 { throw SongRadioError.downloadFailed(message) }
+                    }
+                }
+            } catch {
+                guard self.radioSessionID == id, !Task.isCancelled else { return }
+                if let jobID = self.radioDownloadJobID {
+                    self.beginDownloadPolling(id: jobID)
+                    self.radioDownloadJobID = nil
+                }
+                self.radioErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func prepareRadioSeed(sessionID id: UUID) async throws {
+        guard !radioHasStartedPlayback else { return }
+        // Wait for host election before using the normal local playback path.
+        for _ in 0..<40 {
+            try checkRadioSession(id)
+            if playbackSessionRole == .host { break }
+            try await Task.sleep(for: .milliseconds(250))
+        }
+        guard playbackSessionRole == .host else { throw SongRadioError.playbackUnavailable }
+        if let track = radioSeedTrack, !radioSeedWasQueued {
+            radioSeedWasQueued = true
+            queue = [track]
+            playPreparedRadioTrackIfNeeded()
+        }
+        if radioSeed == nil, let track = radioSeedTrack {
+            radioStatusMessage = "Finding this song on YouTube Music…"
+            let results = try await radioClient.searchSongs(query: "\(track.title) \(track.artist)", limit: 10)
+            try checkRadioSession(id)
+            guard let song = results.first(where: { $0.radioIdentity == track.radioIdentity }) else {
+                throw SongRadioError.seedNotFound
+            }
+            radioSeed = song
+        }
+        guard let song = radioSeed else { throw SongRadioError.seedNotFound }
+        if let track = radioSeedTrack { radioSongsByTrackID[track.id] = song }
+        radioBuffer.markSeen(song)
+        if !radioSeedWasQueued {
+            let track = try await prepareRadioTrack(song, sessionID: id)
+            try checkRadioSession(id)
+            radioSeedTrack = track
+            radioSongsByTrackID[track.id] = song
+            radioSeedWasQueued = true
+            queue = [track]
+            playPreparedRadioTrackIfNeeded()
+        }
+        radioHasStartedPlayback = true
+    }
+
+    private func prepareRadioTrack(_ song: YouTubeMusicSongResult, sessionID id: UUID) async throws -> Track {
+        if let track = song.downloadedTrack(in: catalog) { return track }
+        radioStatusMessage = "Preparing \(song.title)…"
+        let deadline = Date().addingTimeInterval(15 * 60)
+        while true {
+            try checkRadioSession(id)
+            guard Date() < deadline else { throw SongRadioError.downloadFailed("The download timed out.") }
+            if radioDeletionTask != nil, !pendingRadioDeletions.isEmpty {
+                radioStatusMessage = "Removing the skipped download…"
+                try await Task.sleep(for: .milliseconds(250))
+                continue
+            }
+            let activeDownload = try await serverClient.fetchActiveDownload()
+            try checkRadioSession(id)
+            if isDownloadStarting || downloadJob?.isActive == true || activeDownload != nil {
+                radioStatusMessage = "Waiting for the current download…"
+                try await Task.sleep(for: .seconds(2))
+                continue
+            }
+            // Another device may already have downloaded this recommendation.
+            let tracks = try await serverClient.fetchTracks()
+            try checkRadioSession(id)
+            replaceCatalog(with: tracks)
+            if let track = song.downloadedTrack(in: catalog) { return track }
+            do {
+                var job = try await serverClient.startDownload(AriaDownloadRequest(
+                    link: song.downloadLink, album: song.title, albumArtist: song.artist, year: "", kind: "song", source: "radio"
+                ))
+                guard radioSessionID == id, !Task.isCancelled else {
+                    downloadJob = job
+                    beginDownloadPolling(id: job.id)
+                    throw CancellationError()
+                }
+                radioDownloadJobID = job.id
+                downloadJob = job
+                downloadErrorMessage = nil
+                while job.isActive {
+                    radioStatusMessage = "Downloading \(song.title) · \(Int(job.progressFraction * 100))%"
+                    try await Task.sleep(for: .milliseconds(1250))
+                    job = try await serverClient.fetchDownloadStatus(id: job.id)
+                    try checkRadioSession(id)
+                    downloadJob = job
+                    guard Date() < deadline else { throw SongRadioError.downloadFailed("The download timed out.") }
+                }
+                radioDownloadJobID = nil
+                guard job.isSuccessful else { throw SongRadioError.downloadFailed(job.error ?? job.message) }
+                let tracks = try await serverClient.fetchTracks()
+                try checkRadioSession(id)
+                replaceCatalog(with: tracks)
+                guard let track = catalog.first(where: { $0.id == job.trackID })
+                    ?? song.downloadedTrack(in: catalog) else { throw SongRadioError.downloadedSongMissing }
+                return track
+            } catch AriaServerError.serverMessage(409, _) {
+                // Another device won the download slot; wait and reuse its result.
+                try await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func playPreparedRadioTrackIfNeeded() {
+        guard isWaitingForRadioTrack, isPlaying else { return }
+        let nextTrack = currentTrack.flatMap { orderedNext(after: $0) } ?? (currentTrack == nil ? queue.first : nil)
+        guard let nextTrack else { return }
+        isWaitingForRadioTrack = false
+        play(nextTrack, from: queue, continuingRadio: true)
+    }
+
+    private func waitForNextRadioTrack() {
+        audioPlayer?.pause()
+        isWaitingForRadioTrack = true
+        isPlaying = true
+        refillRadio()
+        updateNowPlayingInfo()
+    }
+
     func clearFinishedDownload() {
         guard downloadJob?.isFinished == true else { return }
         downloadJob = nil
         downloadErrorMessage = nil
     }
 
-    func play(_ track: Track, from collection: [Track]? = nil) {
+    func play(_ track: Track, from collection: [Track]? = nil, continuingRadio: Bool = false) {
+        if !continuingRadio { stopRadio() }
         if shouldRoutePlaybackCommand {
             let remoteQueue = collection?.isEmpty == false ? collection! : (queue.isEmpty ? [track] : queue)
             queue = remoteQueue
@@ -543,10 +951,21 @@ final class PlayerViewModel: ObservableObject {
         startPlayback(for: track)
         startTimer()
         refreshNowPlayingArtwork(for: track)
+        if continuingRadio {
+            isWaitingForRadioTrack = false
+            refillRadio()
+        }
         updateNowPlayingInfo()
     }
 
     func playPause() {
+        if isRadioActive, isWaitingForRadioTrack {
+            isPlaying.toggle()
+            playPreparedRadioTrackIfNeeded()
+            if isPlaying { refillRadio() }
+            updateNowPlayingInfo()
+            return
+        }
         if shouldRoutePlaybackCommand {
             isPlaying.toggle()
             sendPlaybackCommand(action: "playPause")
@@ -588,9 +1007,11 @@ final class PlayerViewModel: ObservableObject {
         let nextTrack = orderedNext(after: currentTrack)
 
         if let nextTrack {
-            play(nextTrack, from: queue)
+            play(nextTrack, from: queue, continuingRadio: true)
+        } else if isRadioActive {
+            waitForNextRadioTrack()
         } else if repeatMode == .all, let firstTrack = queue.first {
-            play(firstTrack, from: queue)
+            play(firstTrack, from: queue, continuingRadio: true)
         } else {
             elapsed = currentTrack.duration
             isPlaying = false
@@ -617,7 +1038,7 @@ final class PlayerViewModel: ObservableObject {
             return
         }
 
-        play(queue[queue.index(before: currentIndex)], from: queue)
+        play(queue[queue.index(before: currentIndex)], from: queue, continuingRadio: true)
     }
 
     func skipToNextTrack() {
@@ -629,9 +1050,12 @@ final class PlayerViewModel: ObservableObject {
         guard let currentTrack, canSkipToNextTrack else { return }
 
         let nextTrack = orderedNext(after: currentTrack)
-        guard let nextTrack else { return }
+        guard let nextTrack else {
+            if isRadioActive { waitForNextRadioTrack() }
+            return
+        }
 
-        play(nextTrack, from: queue)
+        play(nextTrack, from: queue, continuingRadio: true)
     }
 
     func skipToPreviousTrack() {
@@ -648,7 +1072,7 @@ final class PlayerViewModel: ObservableObject {
             return
         }
 
-        play(queue[queue.index(before: currentIndex)], from: queue)
+        play(queue[queue.index(before: currentIndex)], from: queue, continuingRadio: true)
     }
 
     func seek(toProgress progress: Double) {
@@ -670,6 +1094,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func toggleShuffle() {
+        guard !isRadioActive else { return }
         if shouldRoutePlaybackCommand {
             isShuffleEnabled.toggle()
             sendPlaybackCommand(action: "shuffle")
@@ -688,6 +1113,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func cycleRepeatMode() {
+        guard !isRadioActive else { return }
         if shouldRoutePlaybackCommand {
             advanceRepeatMode()
             sendPlaybackCommand(action: "repeat")
@@ -718,6 +1144,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func playNow(_ track: Track) {
+        stopRadio()
         if shouldRoutePlaybackCommand {
             play(track, from: queue)
             return
@@ -836,6 +1263,7 @@ final class PlayerViewModel: ObservableObject {
 
         queue.removeAll { $0.id == track.id }
         manuallyQueuedTrackIDs.removeAll { $0 == track.id }
+        refillRadio()
         publishQueueNotice(message: "Removed \(track.title) from queue", symbolName: "trash.fill")
     }
 
@@ -1201,6 +1629,7 @@ final class PlayerViewModel: ObservableObject {
         do {
             let previousRole = playbackSessionRole
             let response = try await serverClient.syncPlayback(request)
+            guard response.sessionID == playbackSessionID else { return }
             playbackSessionError = nil
             playbackSessionRole = response.role
             playbackHostName = response.hostName
@@ -1212,6 +1641,7 @@ final class PlayerViewModel: ObservableObject {
 
             switch response.role {
             case .controller:
+                stopRadio()
                 shouldStartAudioWhenBecomingHost = true
                 applyPlaybackState(response.state, stopsLocalAudio: true)
             case .host:
@@ -1389,6 +1819,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func switchPlaybackSession(to sessionID: String) {
+        stopRadio()
         shouldStartAudioWhenBecomingHost = isRemoteController
         playbackSessionID = sessionID
         lastPlaybackCommandID = 0
@@ -1438,9 +1869,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func replaceCatalog(with tracks: [Track]) {
-        audioPlayer?.pause()
-        removeEndObserver()
-
+        let hadCatalog = !catalog.isEmpty
         let tracksByID = Dictionary(uniqueKeysWithValues: tracks.map { ($0.id, $0) })
         let userPlaylists = playlists
             .filter { $0.id != Self.libraryPlaylistID }
@@ -1455,8 +1884,9 @@ final class PlayerViewModel: ObservableObject {
 
         catalog = tracks
         albums = Self.albums(from: tracks)
-        queue = tracks
-        manuallyQueuedTrackIDs.removeAll()
+        queue = queue.compactMap { tracksByID[$0.id] }
+        manuallyQueuedTrackIDs.removeAll { tracksByID[$0] == nil }
+        if !hadCatalog, !isRadioActive, queue.isEmpty { queue = tracks }
         playlists = [
             AriaPlaylist(
                 id: Self.libraryPlaylistID,
@@ -1466,13 +1896,20 @@ final class PlayerViewModel: ObservableObject {
             )
         ] + userPlaylists
         persistPlaylists()
-        listeningHistory = []
-        currentTrack = tracks.first
-        elapsed = 0
-        isPlaying = false
-        nowPlayingArtwork = nil
-        nowPlayingArtworkTrackID = nil
-        nowPlayingArtworkTask?.cancel()
+        listeningHistory = listeningHistory.compactMap { tracksByID[$0.id] }
+        if let current = currentTrack, let updated = tracksByID[current.id] {
+            currentTrack = updated
+        } else if !isRadioActive {
+            audioPlayer?.pause()
+            audioPlayer = nil
+            removeEndObserver()
+            currentTrack = queue.first ?? tracks.first
+            elapsed = 0
+            isPlaying = false
+            nowPlayingArtwork = nil
+            nowPlayingArtworkTrackID = nil
+            nowPlayingArtworkTask?.cancel()
+        }
         updateNowPlayingInfo()
     }
 
@@ -1523,7 +1960,7 @@ final class PlayerViewModel: ObservableObject {
     }
 
     private func tick() {
-        guard isPlaying, let currentTrack else { return }
+        guard isPlaying, !isWaitingForRadioTrack, let currentTrack else { return }
 
         if let audioPlayer, currentTrack.streamURL != nil {
             let currentSeconds = audioPlayer.currentTime().seconds

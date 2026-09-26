@@ -426,6 +426,12 @@ struct TrackRow: View {
             }
 
             Button {
+                player.startRadio(track)
+            } label: {
+                Label("Start Radio", systemImage: "antenna.radiowaves.left.and.right")
+            }
+
+            Button {
                 player.playNext(track)
             } label: {
                 Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
@@ -486,7 +492,7 @@ struct TrackRow: View {
 
     private func handleRowTap() {
         guard !playbackDisabled, !suppressesPlayback, abs(queueSwipeOffset) < 1 else { return }
-        player.play(track, from: source)
+        player.play(track, from: source, continuingRadio: usesCustomQueueSwipe)
         withAnimation(AriaMotion.playerSpring) {
             player.showPlayer()
         }

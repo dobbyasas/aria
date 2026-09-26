@@ -14,6 +14,7 @@ struct Track: Identifiable, Hashable, Codable {
     var artworkURL: URL?
     var isExplicit: Bool
     var isStandalone: Bool?
+    var isRadioDownload: Bool?
 
     private enum CodingKeys: String, CodingKey {
         case id
@@ -29,6 +30,7 @@ struct Track: Identifiable, Hashable, Codable {
         case artworkURL
         case isExplicit
         case isStandalone
+        case isRadioDownload
     }
 
     init(
@@ -44,7 +46,8 @@ struct Track: Identifiable, Hashable, Codable {
         streamURL: URL? = nil,
         artworkURL: URL? = nil,
         isExplicit: Bool = false,
-        isStandalone: Bool = false
+        isStandalone: Bool = false,
+        isRadioDownload: Bool = false
     ) {
         self.id = id
         self.serverAlbumID = serverAlbumID
@@ -59,6 +62,7 @@ struct Track: Identifiable, Hashable, Codable {
         self.artworkURL = artworkURL
         self.isExplicit = isExplicit
         self.isStandalone = isStandalone
+        self.isRadioDownload = isRadioDownload
     }
 }
 
