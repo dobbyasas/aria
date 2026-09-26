@@ -1,6 +1,14 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.23.0
+Created: 2026-09-26
+
+Added:
+- Start Radio from library and YouTube Music songs, automatically downloading missing songs.
+- Skip, exclude, and delete disliked radio songs, with persistent deletion retries.
+- Shared server flags and bulk cleanup for radio downloads.
+
 Version 1.22.6
 Created: 2026-09-10
 
