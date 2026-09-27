@@ -76,3 +76,14 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 - `Aria/Support`: styling and formatting helpers.
 
 The Python song server lives on the Fedora laptop at `~/aria-server/server`.
+
+## Review radio downloads
+
+Open **Radio Downloads** beside Songs, Albums, and Playlists. It shows only songs
+with the server's radio-download flag. Swipe right to **Keep**, or left to
+**Delete**; both actions are also available in each row's menu and accessibility
+actions. Keep clears the shared server flag, preserves the song in Songs and
+playlists, and protects it from bulk radio cleanup on every device. Delete removes
+the shared file and playlist references without excluding it from future radio
+stations. Failed actions leave the row available to retry. Pull to refresh changes
+made on another device. Requires server 1.24.0 or later.
