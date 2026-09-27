@@ -9,10 +9,15 @@ struct LibraryView: View {
     @State private var songSearchText = ""
     @State private var albumSearchText = ""
     @State private var playlistSearchText = ""
+    @State private var radioSearchText = ""
     @State private var albumSortMode: AlbumSortMode = .title
     @State private var isDownloadSheetPresented = false
     @State private var isRadioCleanupPresented = false
     @FocusState private var isSearchFocused: Bool
+
+    init(initialSection: LibrarySection = .songs) {
+        _selectedSection = State(initialValue: initialSection)
+    }
 
     var body: some View {
         NavigationStack {
@@ -20,7 +25,6 @@ struct LibraryView: View {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     header
                     sectionPicker
-                    radioDownloads
                     librarySearchField
                     sectionContent
 
@@ -35,6 +39,7 @@ struct LibraryView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Color.ariaBackground.ignoresSafeArea())
+            .refreshable { await player.refreshCatalog() }
             .scrollDismissesKeyboard(.interactively)
             .navigationDestination(for: LibraryRoute.self) { route in
                 destination(for: route)
@@ -53,7 +58,7 @@ struct LibraryView: View {
                 Task { await player.deleteAllRadioDownloads() }
             }
         } message: {
-            Text("This stops radio and deletes songs downloaded by radio from the shared server and playlists. Songs you already had before radio are kept.")
+            Text("This stops radio and deletes songs downloaded by radio from the shared server and playlists. Songs you keep and songs you already had before radio are preserved.")
         }
     }
 
@@ -73,6 +78,7 @@ struct LibraryView: View {
                         Button("Delete all", role: .destructive) { isRadioCleanupPresented = true }
                             .font(.subheadline.weight(.semibold))
                             .frame(minHeight: 44)
+                            .disabled(!player.radioReviewTrackIDs.isEmpty || player.radioDownloadCount == 0)
                     }
                 }
                 if player.isDeletingRadioDownloads {
@@ -142,34 +148,41 @@ struct LibraryView: View {
     }
 
     private var sectionPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(LibrarySection.allCases) { section in
-                    Button {
-                        guard selectedSection != section else { return }
-                        withAnimation(AriaMotion.fast) {
-                            selectedSection = section
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(LibrarySection.allCases) { section in
+                        Button {
+                            guard selectedSection != section else { return }
+                            withAnimation(AriaMotion.fast) {
+                                selectedSection = section
+                            }
+                        } label: {
+                            Text(section.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(selectedSection == section ? Color.black : Color.ariaTextPrimary)
+                                .padding(.horizontal, 16)
+                                .frame(height: 36)
+                                .background(
+                                    selectedSection == section ? Color.ariaAccent : Color.ariaSurfaceRaised,
+                                    in: Capsule()
+                                )
+                                .contentShape(Capsule())
                         }
-                    } label: {
-                        Text(section.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(selectedSection == section ? Color.black : Color.ariaTextPrimary)
-                            .padding(.horizontal, 16)
-                            .frame(height: 36)
-                            .background(
-                                selectedSection == section ? Color.ariaAccent : Color.ariaSurfaceRaised,
-                                in: Capsule()
-                            )
-                            .contentShape(Capsule())
+                        .buttonStyle(AriaPressButtonStyle(pressedScale: 0.97))
+                        .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
+                        .id(section)
                     }
-                    .buttonStyle(AriaPressButtonStyle(pressedScale: 0.97))
-                    .accessibilityAddTraits(selectedSection == section ? .isSelected : [])
                 }
             }
+            .sensoryFeedback(.selection, trigger: selectedSection)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Library sections")
+            .onAppear { proxy.scrollTo(selectedSection, anchor: .trailing) }
+            .onChange(of: selectedSection) { _, section in
+                withAnimation(AriaMotion.fast) { proxy.scrollTo(section, anchor: .trailing) }
+            }
         }
-        .sensoryFeedback(.selection, trigger: selectedSection)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Library sections")
     }
 
     private var librarySearchField: some View {
@@ -215,6 +228,8 @@ struct LibraryView: View {
             $albumSearchText
         case .playlists:
             $playlistSearchText
+        case .radioDownloads:
+            $radioSearchText
         }
     }
 
@@ -227,6 +242,37 @@ struct LibraryView: View {
             albumsSection
         case .playlists:
             playlistsSection
+        case .radioDownloads:
+            radioDownloadsSection
+        }
+    }
+
+    private var radioDownloadsSection: some View {
+        let query = radioSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tracks = player.radioDownloads.filter {
+            query.isEmpty || $0.title.localizedStandardContains(query)
+                || $0.artist.localizedStandardContains(query) || $0.album.localizedStandardContains(query)
+        }
+        return LazyVStack(alignment: .leading, spacing: 12) {
+            SectionTitle(title: "Radio Downloads")
+            Text("Swipe right to keep, left to delete. Kept songs stay in Songs and are protected from radio cleanup.")
+                .font(.subheadline)
+                .foregroundStyle(.ariaTextSecondary)
+            radioDownloads
+            catalogStatus
+            if let error = player.radioReviewError {
+                Text(error).font(.subheadline).foregroundStyle(.orange)
+            }
+            if tracks.isEmpty {
+                Text(query.isEmpty ? "No radio downloads to review. New songs downloaded by radio will appear here." : "No matching radio downloads.")
+                    .font(.subheadline)
+                    .foregroundStyle(.ariaTextSecondary)
+                    .padding(.vertical, 24)
+            } else {
+                ForEach(tracks) { track in
+                    RadioDownloadReviewRow(track: track, source: tracks)
+                }
+            }
         }
     }
 
@@ -471,10 +517,11 @@ private enum LibraryRoute: Hashable {
     case playlist(UUID)
 }
 
-private enum LibrarySection: String, CaseIterable, Identifiable {
+enum LibrarySection: String, CaseIterable, Identifiable {
     case songs
     case albums
     case playlists
+    case radioDownloads
 
     var id: String { rawValue }
 
@@ -486,6 +533,8 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
             "Albums"
         case .playlists:
             "Playlists"
+        case .radioDownloads:
+            "Radio Downloads"
         }
     }
 
@@ -497,6 +546,8 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
             "Search albums"
         case .playlists:
             "Search playlists"
+        case .radioDownloads:
+            "Search radio downloads"
         }
     }
 
@@ -508,6 +559,8 @@ private enum LibrarySection: String, CaseIterable, Identifiable {
             "square.stack"
         case .playlists:
             "music.note.list"
+        case .radioDownloads:
+            "antenna.radiowaves.left.and.right"
         }
     }
 }
@@ -2073,4 +2126,101 @@ private struct MissingLibraryItemView: View {
 
 private func songCountText(_ count: Int) -> String {
     count == 1 ? "1 song" : "\(count) songs"
+}
+
+private struct RadioDownloadReviewRow: View {
+    @EnvironmentObject private var player: PlayerViewModel
+    let track: Track
+    let source: [Track]
+    @State private var swipeOffset: CGFloat = 0
+    @State private var horizontalSwipe: Bool?
+
+    private var isBusy: Bool {
+        player.radioReviewTrackIDs.contains(track.id) || player.isDeletingRadioDownloads
+    }
+
+    var body: some View {
+        ZStack {
+            HStack {
+                Label("Keep", systemImage: "checkmark.circle.fill")
+                Spacer()
+                Label("Delete", systemImage: "trash.fill")
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .opacity(min(abs(swipeOffset) / 40, 1))
+
+            HStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    ArtworkView(track: track, size: 52, cornerRadius: 4)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(track.title)
+                            .font(.headline)
+                            .foregroundStyle(player.currentTrack?.id == track.id ? .ariaAccent : .ariaTextPrimary)
+                            .lineLimit(1)
+                        Text(track.artist)
+                            .font(.subheadline)
+                            .foregroundStyle(.ariaTextSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    guard !isBusy, swipeOffset == 0 else { return }
+                    player.play(track, from: source)
+                }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(named: "Play") { player.play(track, from: source) }
+                if isBusy {
+                    ProgressView().frame(width: 44)
+                        .accessibilityLabel("Updating download; waiting for any active download to finish")
+                } else {
+                    Menu {
+                        Button("Keep in Songs", systemImage: "checkmark.circle") { review(keep: true) }
+                        Button("Delete Download", systemImage: "trash", role: .destructive) { review(keep: false) }
+                    } label: {
+                        Image(systemName: "ellipsis").frame(width: 44, height: 52)
+                    }
+                    .accessibilityLabel("Review \(track.title)")
+                }
+            }
+            .padding(.vertical, 8)
+            .background(Color.ariaBackground)
+            .offset(x: swipeOffset)
+        }
+        .background(swipeOffset == 0 ? Color.clear : (swipeOffset > 0 ? Color.green : Color.red))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { value in
+                    guard !isBusy else { return }
+                    if horizontalSwipe == nil {
+                        horizontalSwipe = abs(value.translation.width) > abs(value.translation.height) * 1.5
+                    }
+                    guard horizontalSwipe == true else { return }
+                    swipeOffset = min(max(value.translation.width, -110), 110)
+                }
+                .onEnded { _ in
+                    let offset = swipeOffset
+                    horizontalSwipe = nil
+                    withAnimation(.easeOut(duration: 0.2)) { swipeOffset = 0 }
+                    guard !isBusy, abs(offset) >= 80 else { return }
+                    review(keep: offset > 0)
+                }
+        )
+        .accessibilityAction(named: "Keep in Songs") { review(keep: true) }
+        .accessibilityAction(named: "Delete Download") { review(keep: false) }
+        .accessibilityHint("Swipe right to keep or left to delete the shared download")
+    }
+
+    private func review(keep: Bool) {
+        guard !isBusy else { return }
+        Task {
+            if keep { await player.keepRadioDownload(track) }
+            else { await player.deleteRadioDownload(track) }
+        }
+    }
 }

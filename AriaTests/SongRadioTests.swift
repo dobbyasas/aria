@@ -49,6 +49,8 @@ final class SongRadioTests: XCTestCase {
     private var deletedIDs: [String] = []
     private var deleteBusyCount = 0
     private var deleteFails = false
+    private var keepFails = false
+    private var keepBusyCount = 0
     private var failedDownloadTitles: Set<String> = []
     private var reusedTrackID: UUID?
 
@@ -113,6 +115,18 @@ final class SongRadioTests: XCTestCase {
                     "progress": 1, "album": json["album"]!, "albumArtist": "Artist", "year": "", "filesStarted": 1, "outputTail": []]
                 if let reusedTrackID { job["trackID"] = reusedTrackID.uuidString }
                 return (200, try JSONSerialization.data(withJSONObject: job))
+            case ("POST", let path) where path.hasPrefix("/api/radio-downloads/") && path.hasSuffix("/keep"):
+                if keepFails { return (500, Data("{\"error\":\"Disk unavailable\"}".utf8)) }
+                if keepBusyCount > 0 {
+                    keepBusyCount -= 1
+                    return (409, Data("{\"error\":\"Download in progress\"}".utf8))
+                }
+                let id = String(path.split(separator: "/")[2])
+                guard let index = serverTracks.firstIndex(where: { $0.id.uuidString.lowercased() == id }) else {
+                    return (404, Data("{}".utf8))
+                }
+                serverTracks[index].isRadioDownload = false
+                return (200, Data("{}".utf8))
             case ("DELETE", let path):
                 if deleteFails { return (500, Data("{\"error\":\"Server unavailable\"}".utf8)) }
                 if deleteBusyCount > 0 {
@@ -382,6 +396,104 @@ final class SongRadioTests: XCTestCase {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("aria-radio-preview.png")
         try image.pngData()!.write(to: path)
         print("RADIO_PREVIEW=\(path.path)")
+    }
+
+    func testKeepProtectsFromCleanupAndPreservesPlayback() async throws {
+        var tracks = (0..<3).map(track)
+        tracks[0].isRadioDownload = true
+        tracks[1].isRadioDownload = true
+        let player = makePlayer(tracks: tracks, provider: RadioProvider([]))
+        player.play(tracks[0], from: tracks)
+        player.elapsed = 37
+        await player.keepRadioDownload(tracks[0])
+        XCTAssertNil(player.radioReviewError)
+        XCTAssertEqual(player.radioDownloads.map(\.id), [tracks[1].id])
+        XCTAssertEqual(player.currentTrack?.id, tracks[0].id)
+        XCTAssertEqual(player.currentTrack?.isRadioDownload, false)
+        XCTAssertEqual(player.elapsed, 37)
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertEqual(player.queue.map(\.id), tracks.map(\.id))
+        await player.refreshCatalog()
+        await player.deleteAllRadioDownloads()
+        XCTAssertTrue(player.catalog.contains { $0.id == tracks[0].id })
+        XCTAssertTrue(player.catalog.contains { $0.id == tracks[2].id })
+        XCTAssertFalse(player.catalog.contains { $0.id == tracks[1].id })
+        XCTAssertTrue(player.isPlaying)
+    }
+
+    func testReviewFailureStaysVisibleAndCanBeRetried() async throws {
+        var item = track(0)
+        item.isRadioDownload = true
+        let player = makePlayer(tracks: [item], provider: RadioProvider([]))
+        keepFails = true
+        await player.keepRadioDownload(item)
+        XCTAssertNotNil(player.radioReviewError)
+        XCTAssertEqual(player.radioDownloadCount, 1)
+        XCTAssertTrue(player.radioReviewTrackIDs.isEmpty)
+        deleteFails = true
+        await player.deleteRadioDownload(item)
+        XCTAssertNotNil(player.radioReviewError)
+        XCTAssertEqual(player.radioDownloadCount, 1)
+        deleteFails = false
+        await player.deleteRadioDownload(item)
+        XCTAssertNil(player.radioReviewError)
+        XCTAssertTrue(player.catalog.isEmpty)
+        XCTAssertEqual(deletedIDs, [item.id.uuidString.lowercased()])
+    }
+
+    func testBusyKeepBlocksCleanupUntilProtected() async throws {
+        var item = track(0)
+        item.isRadioDownload = true
+        let player = makePlayer(tracks: [item], provider: RadioProvider([]))
+        keepBusyCount = 1
+        let keeping = Task { await player.keepRadioDownload(item) }
+        try await eventually { !player.radioReviewTrackIDs.isEmpty }
+        await player.deleteAllRadioDownloads()
+        XCTAssertEqual(bulkDeleteRequests, 0)
+        XCTAssertEqual(player.radioDownloadCount, 1)
+        await keeping.value
+        XCTAssertNil(player.radioReviewError)
+        XCTAssertEqual(player.radioDownloadCount, 0)
+        XCTAssertTrue(player.radioReviewTrackIDs.isEmpty)
+    }
+
+    func testReviewDeletingPlayingRadioSongAdvancesWithoutExcluding() async throws {
+        var tracks = (0..<6).map(track)
+        tracks[0].isRadioDownload = true
+        let player = makePlayer(tracks: tracks, provider: RadioProvider(tracks.map { song($0) }))
+        player.startRadio(tracks[0])
+        try await eventually { player.queue.count == 4 }
+        await player.deleteRadioDownload(tracks[0])
+        XCTAssertNil(player.radioReviewError)
+        XCTAssertEqual(player.currentTrack?.id, tracks[1].id)
+        XCTAssertTrue(player.isRadioActive)
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertFalse(player.catalog.contains { $0.id == tracks[0].id })
+        XCTAssertFalse(player.queue.contains { $0.id == tracks[0].id })
+        XCTAssertFalse((defaults.stringArray(forKey: "aria.radio.excludedSongs") ?? []).contains(tracks[0].radioIdentity))
+    }
+
+    func testRadioDownloadsLayouts() async throws {
+        var tracks = (0..<5).map(track)
+        for i in tracks.indices { tracks[i].isRadioDownload = i != 4 }
+        let player = makePlayer(tracks: tracks, provider: RadioProvider([]))
+        for size in [CGSize(width: 393, height: 852), CGSize(width: 1024, height: 1366)] {
+            let host = UIHostingController(rootView: LibraryView(initialSection: .radioDownloads).environmentObject(player).preferredColorScheme(.dark))
+            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+            let window = UIWindow(windowScene: scene)
+            window.frame = CGRect(origin: .zero, size: size)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(200))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let path = FileManager.default.temporaryDirectory.appendingPathComponent("aria-radio-review-\(Int(size.width)).png")
+            try image.pngData()!.write(to: path)
+            print("RADIO_REVIEW_PREVIEW=\(path.path)")
+            window.isHidden = true
+        }
     }
 
     func testRadioParserKeepsPrimaryOrderSkipsUnavailableAndReadsContinuation() throws {

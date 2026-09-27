@@ -1,6 +1,14 @@
 ARIA FOR IPHONE AND IPAD - VERSION HISTORY
 ==========================================
 
+Version 1.24.0
+Created: 2026-09-27
+
+Added:
+- Radio Downloads library section with swipe right to Keep and swipe left to Delete.
+- Kept songs remain in Songs and playlists and are protected from shared radio cleanup.
+- Search, accessible review actions, and retryable errors for individual downloads.
+
 Version 1.23.0
 Created: 2026-09-26
 

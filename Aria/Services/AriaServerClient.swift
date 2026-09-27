@@ -224,6 +224,23 @@ struct AriaServerClient {
         throw AriaServerError.unreachable(failures)
     }
 
+    func keepRadioDownload(_ track: Track) async throws {
+        var failures: [String] = []
+        for baseURL in baseURLs {
+            do {
+                let endpoint = baseURL.appendingPathComponent("api/radio-downloads")
+                    .appendingPathComponent(track.id.uuidString.lowercased())
+                    .appendingPathComponent("keep")
+                _ = try await sendRequest(to: endpoint, method: "POST")
+                return
+            } catch {
+                if case AriaServerError.serverMessage(409, _) = error { throw error }
+                failures.append(error.localizedDescription)
+            }
+        }
+        throw AriaServerError.unreachable(failures)
+    }
+
     func deleteRadioDownloads() async throws -> RadioDownloadsDeletionResult {
         var failures: [String] = []
         for baseURL in baseURLs {
